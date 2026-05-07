@@ -44,10 +44,10 @@ jobs:
              ./compile_gui.sh
 
       - name: Download test image 
-      - run: mkdir -p build && wget -P build https://www.dartmouth.edu/emlab/images/hibim4.jpg 
+        run: mkdir -p build && wget -P build https://www.dartmouth.edu/emlab/images/hibim4.jpg 
 
       - name: Create html artifact 
-      - run: echo "<html><body><h1>SIMPLE Test Report</h1><p>Test Passed</p> <img src="hibim4.jpg" alt="Embedded Base64 image" width="100" height="100"> </body></html>" > build/artifact.html 
+        run: echo "<html><body><h1>SIMPLE Test Report</h1><p>Test Passed</p> <img src="hibim4.jpg" alt="Embedded Base64 image" width="100" height="100"> </body></html>" > build/artifact.html 
 
       - uses: actions/upload-artifact@v4
         with:
