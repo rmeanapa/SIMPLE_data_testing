@@ -1,4 +1,5 @@
 # Template for Test interface
+# Requires to install https://github.com/apps/artifact-ci
 name: Data_test_interface
 on: [push]
 jobs:
