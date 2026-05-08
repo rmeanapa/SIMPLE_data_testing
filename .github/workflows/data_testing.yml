@@ -35,18 +35,18 @@ jobs:
              brew install fftw
              brew install curl
 
-      - name: Download SIMPLE 
+      - name: Clone SIMPLE
         run: |
-             git clone https://github.com/hael/SIMPLE.git 
-             cd SIMPLE
+          git clone https://github.com/hael/SIMPLE.git
+          test -d SIMPLE/.git
 
-      - name: Build SIMPLE in debug mode (Linux/MacOS)
-        run: |
-             ./compile_debug.sh
+      - name: Build SIMPLE in debug mode
+        working-directory: SIMPLE
+        run: ./compile_debug.sh
 
-      - name: Build SIMPLE GUI  (Linux/MacOS)
-        run: |
-             ./compile_gui.sh
+      - name: Build SIMPLE GUI
+        working-directory: SIMPLE
+        run: ./compile_gui.sh
 
       - name: Download test image 
         run: mkdir -p build && wget -P build https://www.dartmouth.edu/emlab/images/hibim4.jpg 
