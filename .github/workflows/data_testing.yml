@@ -35,16 +35,17 @@ jobs:
              brew install fftw
              brew install curl
 
-      - name: Build SIMPLE in debug mode (Linux/MacOS)
+      - name: Download SIMPLE 
         run: |
              git clone https://github.com/hael/SIMPLE.git 
              cd SIMPLE
+
+      - name: Build SIMPLE in debug mode (Linux/MacOS)
+        run: |
              ./compile_debug.sh
 
       - name: Build SIMPLE GUI  (Linux/MacOS)
         run: |
-             git clone https://github.com/hael/SIMPLE.git
-             cd SIMPLE
              ./compile_gui.sh
 
       - name: Download test image 
