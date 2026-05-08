@@ -37,13 +37,13 @@ jobs:
 
       - name: Build SIMPLE in debug mode (Linux/MacOS)
         run: |
-             git clone git@github.com:hael/SIMPLE.git
+             git clone https://github.com/hael/SIMPLE.git 
              cd SIMPLE
              ./compile_debug.sh
 
       - name: Build SIMPLE GUI  (Linux/MacOS)
         run: |
-             git clone git@github.com:hael/SIMPLE.git
+             git clone https://github.com/hael/SIMPLE.git
              cd SIMPLE
              ./compile_gui.sh
 
