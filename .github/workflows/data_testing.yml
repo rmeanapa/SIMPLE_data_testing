@@ -40,13 +40,23 @@ jobs:
           git clone https://github.com/hael/SIMPLE.git
           test -d SIMPLE/.git
 
-      - name: Build SIMPLE in debug mode
-        working-directory: SIMPLE
-        run: ./compile_debug.sh
-
       - name: Build SIMPLE GUI
         working-directory: SIMPLE
-        run: ./compile_gui.sh
+        run: ./compile_clean.sh
+
+      - name: Run tests 
+        working-directory: workspace
+        run: |
+             export SIMPLE_EMAIL="my.name@uni.edu"
+             export SIMPLE_QSYS="local"
+             export SIMPLE_PATH=$GITHUB_WORKSPACE/SIMPLE/build
+             export PATH=${SIMPLE_PATH}/scripts:${SIMPLE_PATH}/bin:${PATH}
+             filetab_movs.pl $GITHUB_WORKSPACE/betagal/movies
+             simple_exec prg=new_project projname=betagal
+             simple_exec prg=import_movies kv=200 cs=1.4 smpd=0.885 fraca=0.1 nparts=4 nthr=32 filetab=../movies.txt
+             simple_exec prg=motion_correct scale=0.5 nparts=4 nthr=32
+             simple_exec prg=new_project projname=apof
+
 
       - name: Download test image 
         run: mkdir -p build && wget -P build https://www.dartmouth.edu/emlab/images/hibim4.jpg 
