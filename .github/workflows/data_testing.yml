@@ -49,7 +49,7 @@ jobs:
       - name: Run tests 
         working-directory: workspace
         run: |
-             git lsf pull
+             git lfs pull
              export SIMPLE_EMAIL="my.name@uni.edu"
              export SIMPLE_QSYS="local"
              export SIMPLE_PATH=$GITHUB_WORKSPACE/SIMPLE/build
