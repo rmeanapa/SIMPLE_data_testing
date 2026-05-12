@@ -26,7 +26,7 @@ jobs:
         working-directory: workspace
         run: |
              git lfs pull
-             filetab_movs.pl /betagal/movies
+             filetab_movs.pl ./betagal/movies
              simple_exec prg=new_project projname=betagal
              cd betagal
              simple_exec prg=import_movies kv=200 cs=1.4 smpd=0.885 fraca=0.1 nparts=4 nthr=32 filetab=../movies.txt projfile=betagal.simple
