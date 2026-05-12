@@ -26,6 +26,7 @@ jobs:
         working-directory: workspace
         run: |
              git lfs pull
+             which simple_exec
              filetab_movs.pl ./betagal/movies
              simple_exec prg=new_project projname=betagal
              cd betagal
