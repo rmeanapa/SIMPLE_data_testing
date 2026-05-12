@@ -5,6 +5,34 @@ name: Build SIMPLE & Run Data Sets (Linux/MacOS)
 on: [push]
 
 jobs:
+
+  build_self_hosted:
+    name: Build on self-hosted runner
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Print Current Directory
+        run: |
+          echo "The current absolute path is:"
+          pwd
+          echo "The GitHub workspace environment variable is:"
+          echo $GITHUB_WORKSPACE
+          ls
+
+      - name: Run tests 
+        working-directory: workspace
+        run: |
+             git lfs pull
+             filetab_movs.pl /betagal/movies
+             simple_exec prg=new_project projname=betagal
+             cd betagal
+             simple_exec prg=import_movies kv=200 cs=1.4 smpd=0.885 fraca=0.1 nparts=4 nthr=32 filetab=../movies.txt projfile=betagal.simple
+             simple_exec prg=new_project projname=apof
+
+
   Build:
     name: Build SIMPLE
     runs-on: ${{ matrix.os }}
