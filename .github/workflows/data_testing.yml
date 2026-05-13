@@ -23,7 +23,6 @@ jobs:
       - name: Run tests 
         #working-directory: workspace
         run: |
-             echo "Working home directory", $GITHUB_WORKSPACE
              which simple_exec
              simple_exec prg=new_project projname=apof
 
