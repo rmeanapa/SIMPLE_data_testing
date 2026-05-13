@@ -21,7 +21,7 @@ jobs:
           ls
 
       - name: Run tests 
-        working-directory: workspace
+        #working-directory: workspace
         run: |
              which simple_exec
              echo $GITHUB_WORKSPACE
