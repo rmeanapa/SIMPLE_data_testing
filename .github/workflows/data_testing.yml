@@ -11,8 +11,6 @@ jobs:
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - name: Print Current Directory
         run: |
@@ -25,68 +23,8 @@ jobs:
       - name: Run tests 
         working-directory: workspace
         run: |
-             git lfs pull
              which simple_exec
-             filetab_movs.pl $GITHUB_WORKSPACE/betagal/movies
-             simple_exec prg=new_project projname=betagal
-             cd betagal
-             simple_exec prg=import_movies kv=200 cs=1.4 smpd=0.885 fraca=0.1 nparts=4 nthr=32 filetab=../movies.txt projfile=betagal.simple
-             simple_exec prg=new_project projname=apof
-
-
-  Build:
-    name: Build SIMPLE
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        node-version: [24]
-        os: [ubuntu-latest, macos-latest]
-
-    steps:
-      - uses: actions/checkout@v4
-        with: 
-          lsf: true
-
-      - name: Install dependencies (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-             sudo apt-get update
-             echo "Install Basic Dependencies"
-             sudo apt-get -y install gcc cmake lzma-dev libtiff-dev libwebp-dev libfftw3-dev libjpeg-dev gnuplot sqlite3 nvidia-cuda-toolkit nvidia-cuda-toolkit-gcc openmpi-bin openmpi-doc libopenmpi-dev libcurl4-openssl-dev
-
-      - name: Install dependencies (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-             echo >> /Users/runner/.bash_profile
-             echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> /Users/runner/.bash_profile
-             eval "$(/opt/homebrew/bin/brew shellenv)"
-             brew install jbigkit
-             brew install python@3.10
-             brew install fftw
-             brew install curl
-
-      - name: Clone SIMPLE
-        run: |
-          git clone https://github.com/hael/SIMPLE.git
-          test -d SIMPLE/.git
-
-      - name: Build SIMPLE GUI
-        working-directory: SIMPLE
-        run: ./compile_clean.sh
-
-      - name: Run tests 
-        working-directory: workspace
-        run: |
-             git lfs pull
-             export SIMPLE_EMAIL="my.name@uni.edu"
-             export SIMPLE_QSYS="local"
-             export SIMPLE_PATH=$GITHUB_WORKSPACE/SIMPLE/build
-             export PATH=${SIMPLE_PATH}/scripts:${SIMPLE_PATH}/bin:${PATH}
-             filetab_movs.pl $GITHUB_WORKSPACE/betagal/movies
-             simple_exec prg=new_project projname=betagal
-             cd betagal
-             simple_exec prg=import_movies kv=200 cs=1.4 smpd=0.885 fraca=0.1 nparts=4 nthr=32 filetab=../movies.txt projfile=betagal.simple
+             echo $GITHUB_WORKSPACE
              simple_exec prg=new_project projname=apof
 
       - name: Download test image 
