@@ -1,3 +1,5 @@
+simple_exec prg=new_project projname=apof
+cd apof
 filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/movies
 simple_exec prg=import_movies filetab=movies.txt smpd=0.693 ctf=yes cs=2.7 kv=300 fraca=0.1
 simple_exec prg=motion_correct smpd_downscale=1.3 total_dose=51.8 nparts=10 nthr=4 projfile=1_import_movies/apof.simple script=yes gainref=/mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/gain/20221214_114106_EER_GainReference.gain
