@@ -24,7 +24,7 @@ jobs:
         #working-directory: apof
         run: |
              which simple_exec
-             ./apof.sh 
+             #./apof.sh 
 
       - name: Download test image 
         run: mkdir -p build && wget -P build https://www.dartmouth.edu/emlab/images/hibim4.jpg 

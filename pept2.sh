@@ -1,0 +1,30 @@
+name=pept2
+smpd=0.698
+dose=55.3
+dir=/mnt/beegfs/elmlund/testing-datasets/PepT2/20230519_101917_27_Rn_PepT2_amox_nB
+gain=$dir/gain/$(ls $dir/gain)
+
+simple_exec prg=new_project projname=$name qsys_partition=csbdevel
+cd $name
+find $dir/movies -type f > movies.txt
+simple_exec prg=import_movies smpd=$smpd cs=2.7 kv=300 fraca=0.1 filetab=movies.txt
+simple_exec prg=motion_correct gainref=$gain total_dose=$dose nparts=64 nthr=6 projfile=1_import_movies/$name.simple script=yes
+simple_exec prg=ctf_estimate projfile=2_motion_correct/$name.simple nparts=16 nthr=8 script=yes
+simple_exec prg=oristats oritab=3_ctf_estimate/$name.simple ctfstats=yes nthr=8 oritype=mic
+AVERAGE CTF RESOLUTION               :     4.54
+STANDARD DEVIATION OF CTF RESOLUTION :     2.25
+MINIMUM CTF RESOLUTION (BEST)        :     2.80
+MAXIMUM CTF RESOLUTION (WORST)       :    50.00
+AVERAGE DF                           :     1.36
+STANDARD DEVIATION OF DF             :     0.43
+MINIMUM DF                           :     0.20
+MAXIMUM DF                           :     4.86
+simple_exec prg=selection oritype=mic projfile=3_ctf_estimate/$name.simple ctfresthreshold=6 icefracthreshold=1
+simple_exec prg=selection oritype=mic projfile=3_ctf_estimate/$name.simple ctfresthreshold=6 icefracthreshold=1 nran=300
+simple_exec prg=print_project_field oritype=mic projfile=5_selection/$name.simple > tmp.txt
+awk '{print $6}' tmp.txt > tmp2.txt
+awk -F'=' '{print $2}' tmp2.txt > sel5.txt
+simple_exec prg=mini_stream script=yes cs=2.7 kv=300 smpd=1.3 nthr=18 filetab=sel5.txt projfile=$name.simple
+simple_exec prg=convert smpd=1.3 stk=selpick.spi outstk=selpick.mrc
+simple_exec prg=pick nparts=16 nthr=6 pickrefs=selpick.mrc projfile=4_selection/$name.simple script=yes
+simple_exec prg=extract nparts=8 nthr=6 box=192 projfile=7_pick/$name.simple script=yes
