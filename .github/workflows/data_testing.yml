@@ -21,7 +21,7 @@ jobs:
           ls
 
       - name: Run tests 
-        working-directory: apof
+        #working-directory: apof
         run: |
              which simple_exec
              ./apof.sh 
