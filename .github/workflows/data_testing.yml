@@ -9,6 +9,7 @@ jobs:
   build_self_hosted:
     name: Build on self-hosted runner
     runs-on: [self-hosted, linux]
+    timeout-minutes: 1440  # Increases the individual job limit to 24 hours
     steps:
       - uses: actions/checkout@v4
 
