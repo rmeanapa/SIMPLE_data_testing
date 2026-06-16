@@ -26,7 +26,7 @@ jobs:
         run: |
              which simple_exec
              ./betagal.sh
-             ./make_report.html betagal
+             ./make_report.sh betagal
              #./apof.sh 
 
       - name: Download test image 
