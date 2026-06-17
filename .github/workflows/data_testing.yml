@@ -25,11 +25,9 @@ jobs:
         #working-directory: apof
         run: |
              which simple_exec
-             cp -r ~/actions/betagal .
+             ./betagal.sh
+             #cp -r ~/actions/betagal .
              ./make_report.sh betagal
-             #rm -rf betagal
-             #./betagal.sh
-             #./apof.sh 
 
       - name: Download test image 
         run: mkdir -p build && cp report.html ./build// 
