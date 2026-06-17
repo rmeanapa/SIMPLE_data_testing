@@ -150,7 +150,7 @@ cat > "$OUTPUT" <<HTML_HEAD
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SIMPLE TEST Report - $SYSTEM_NAME</title>
+  <title>SIMPLE Test Report - $SYSTEM_NAME</title>
   <style>
     body { font-family: sans-serif; background: #f4f4f4; margin: 0; padding: 8px; }
     h1   { color: #333; }
