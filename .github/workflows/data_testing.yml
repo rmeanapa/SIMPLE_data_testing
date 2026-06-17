@@ -35,9 +35,7 @@ jobs:
 
       - name: Create html artifact 
         #run: cp report.html ./build/artifact.html 
-        run: |
-             echo "<html><body><h1>SIMPLE Test Report</h1><p>Test Passed</p> <img src="hibim4.jpg" alt="Embedded Base64 image" width="100" height="100"> </body></html>" > build/artifact.html 
-            cp report.html ./build/
+        run: echo "<html><body><h1>SIMPLE Test Report</h1><p>Test Passed</p> <img src="hibim4.jpg" alt="Embedded Base64 image" width="100" height="100"> </body></html>" > build/artifact.html 
 
       - uses: actions/upload-artifact@v4
         with:
