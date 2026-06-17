@@ -32,7 +32,7 @@ jobs:
              #./apof.sh 
 
       - name: Download test image 
-        run: mkdir -p build && wget -P build https://www.dartmouth.edu/emlab/images/hibim4.jpg 
+        run: mkdir -p build && wget -P build https://www.dartmouth.edu/emlab/images/hibim4.jpg; cp report.html ./build/
 
       - name: Create html artifact 
         #run: cp report.html ./build/artifact.html 
