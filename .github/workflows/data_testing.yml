@@ -26,9 +26,9 @@ jobs:
         run: |
              which simple_exec
              cp -r ~/actions/betagal .
+             ./make_report.sh betagal
              #rm -rf betagal
              #./betagal.sh
-             ./make_report.sh betagal
              #./apof.sh 
 
       - name: Download test image 
@@ -42,3 +42,5 @@ jobs:
         with:
           name: my-artifact
           path: build/ 
+
+
