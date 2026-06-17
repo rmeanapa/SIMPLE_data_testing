@@ -25,6 +25,7 @@ jobs:
         #working-directory: apof
         run: |
              which simple_exec
+             cp -r ~/actions/betagal .
              #rm -rf betagal
              #./betagal.sh
              ./make_report.sh betagal
