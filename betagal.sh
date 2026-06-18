@@ -13,8 +13,8 @@ simple_exec prg=pick picker=segdiam projfile=3_ctf_estimate/betagal.simple npart
 echo " >>> PROGRAM: extract" >> LOG
 simple_exec prg=extract box=256 nparts=5 nthr=8 projfile=4_pick/betagal.simple >> LOG
 echo " >>> PROGRAM: abinitio2D" >> LOG
-simple_exec prg=abinitio2D ncls=100 mskdiam=190 nparts=4 nthr=16 projfile=5_extract/betagal.simple >> LOG 
+simple_exec prg=abinitio2D ncls=100 mskdiam=190 nthr=32 projfile=5_extract/betagal.simple >> LOG 
 echo " >>> PROGRAM: selection" >> LOG
-simple_exec prg=selection res_threshold=7 oritype=cls2D projfile=6_abinitio2D/betagal.simple >> LOG
+simple_exec prg=selection res_threshold=9 oritype=cls2D projfile=6_abinitio2D/betagal.simple >> LOG
 echo " >>> PROGRAM: abinitio3D" >> LOG
-simple_exec prg=abinitio3D pgrp=d2 mskdiam=190 nparts=4 nthr=16 projfile=7_selection/betagal.simple >> LOG
+simple_exec prg=abinitio3D pgrp=d2 mskdiam=190 nthr=32 projfile=7_selection/betagal.simple >> LOG
