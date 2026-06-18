@@ -258,7 +258,7 @@ log_summary_for_section() {
         }
       '
       ;;
-    mini_stream)
+    mini_stream|selection)
       {
         printf 'Final class ranking and status:\n'
         log_block_for_section "$section" | awk '
