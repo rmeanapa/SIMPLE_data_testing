@@ -9,7 +9,7 @@ echo " >>> PROGRAM: ctf_estimate" >> LOG
 simple_exec prg=ctf_estimate nparts=1 nthr=16 >> LOG
 filetab_mrc.pl 2_motion_correct/
 echo " >>> PROGRAM: pick" >> LOG
-simple_exec prg=pick nparts=5 nthr=8 >> LOG
+simple_exec prg=pick picker=segdiam nparts=5 nthr=8 >> LOG
 echo " >>> PROGRAM: extract" >> LOG
 simple_exec prg=extract box=256 nparts=8 nthr=8 >> LOG
 echo " >>> PROGRAM: selection" >> LOG
