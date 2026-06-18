@@ -13,7 +13,7 @@ simple_exec prg=pick picker=segdiam nparts=5 nthr=8 >> LOG
 echo " >>> PROGRAM: extract" >> LOG
 simple_exec prg=extract box=256 nparts=8 nthr=8 >> LOG
 echo " >>> PROGRAM: selection" >> LOG
-simple_exec prg=selection res_threshold=7 projfile=5_extract/betagal.simple >> LOG
+simple_exec prg=selection res_threshold=7 oritype=cls2D projfile=5_extract/betagal.simple >> LOG
 echo " >>> PROGRAM: abinitio2D" >> LOG
 simple_exec prg=abinitio2D ncls=100 mskdiam=190 nthr=24 >> LOG 
 echo " >>> PROGRAM: abinitio3D" >> LOG
