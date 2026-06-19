@@ -121,14 +121,21 @@ log_block_for_section() {
   [[ -f "$log_file" ]] || return 1
 
   awk -v section="$section" '
+    BEGIN {
+      section_program = section
+      sub(/\/.*/, "", section_program)
+      sub(/^[0-9]+_/, "", section_program)
+    }
+
     function reset_block() {
       delete lines
       n = 0
       block_section = ""
+      block_program = ""
     }
 
     function flush_block() {
-      if (block_section == section) {
+      if (block_section == section || (block_section == "" && block_program == section_program)) {
         for (i = 1; i <= n; i++) {
           print lines[i]
         }
@@ -159,6 +166,10 @@ log_block_for_section() {
 
     {
       lines[++n] = $0
+      if ($0 ~ /^[[:space:]]*>>> PROGRAM[[:space:]]*:/) {
+        block_program = $0
+        sub(/^[[:space:]]*>>> PROGRAM[[:space:]]*:[[:space:]]*/, "", block_program)
+      }
       if ($0 ~ /^[[:space:]]*>>> EXECUTION DIRECTORY:/) {
         block_section = $0
         sub(/^[[:space:]]*>>> EXECUTION DIRECTORY:[[:space:]]*/, "", block_section)
@@ -541,6 +552,18 @@ log_sections_for_root() {
   ' "$log_file"
 }
 
+filesystem_sections_for_root() {
+  local dir
+  local name
+
+  while IFS= read -r dir; do
+    name=$(basename "$dir")
+    if [[ "$name" =~ ^[0-9]+_ ]]; then
+      printf '%s\n' "$name"
+    fi
+  done < <(find "$ROOT" -mindepth 1 -maxdepth 1 -type d | sort)
+}
+
 sort_sections() {
   awk '
     !seen[$0]++ {
@@ -603,6 +626,10 @@ append_system_report() {
       add_section_once "$(relative_to_root "$dir")"
     done
   fi
+
+  while IFS= read -r candidate; do
+    add_section_once "$candidate"
+  done < <(filesystem_sections_for_root)
 
   while IFS= read -r candidate; do
     add_section_once "$candidate"
