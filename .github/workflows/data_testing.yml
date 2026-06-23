@@ -25,6 +25,7 @@ jobs:
         run: |
              which simple_exec
              ./betagal.sh
+             ./apof.sh
              ./make_report.sh betagal apof
 
       - name: Copy report
