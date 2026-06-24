@@ -2,27 +2,27 @@ simple_exec prg=new_project projname=apof
 cd apof/
 filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/movies
 echo " >>> PROGRAM: import_movies" > LOG
-simple_exec prg=import_movies cs=2.7 fraca=0.1 kv=300 smpd=0.693 filetab=movies.txt
+simple_exec prg=import_movies cs=2.7 fraca=0.1 kv=300 smpd=0.693 filetab=movies.txt >> LOG
 echo " >>> PROGRAM: motion_correct" >> LOG
-simple_exec prg=motion_correct nparts=5 nthr=8 gainref=/mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/gain/20221214_114106_EER_GainReference.gain total_dose=51.8 smpd_downscale=1.3
+simple_exec prg=motion_correct nparts=5 nthr=8 gainref=/mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/gain/20221214_114106_EER_GainReference.gain total_dose=51.8 smpd_downscale=1.3 >> LOG
 echo " >>> PROGRAM: ctf_estimate" >> LOG
-simple_exec prg=ctf_estimate nparts=5 nthr=8
-simple_exec prg=oristats oritab=3_ctf_estimate/apoferritin_subset.simple nthr=1 ctfstats=yes oritype=mic
+simple_exec prg=ctf_estimate nparts=5 nthr=8 >> LOG
+simple_exec prg=oristats oritab=3_ctf_estimate/apoferritin_subset.simple nthr=1 ctfstats=yes oritype=mic >> LOG
 #simple_exec prg=mini_stream cs=2.7 fraca=0.1 kv=300 smpd=1.3 filetab=filetab.txt nthr=24
 #simple_exec prg=convert smpd=1.3 stk=mini_stream_selection.spi outstk=mini_stream_selection.mrc
 #simple_exec prg=pick pickrefs=mini_stream_selection.mrc nparts=5 nthr=8 projfile=3_ctf_estimate/apof.simple
 echo " >>> PROGRAM: pick" >> LOG
-simple_exec prg=pick picker=segdiam nparts=5 nthr=8 projfile=3_ctf_estimate/apof.simple
+simple_exec prg=pick picker=segdiam nparts=5 nthr=8 projfile=3_ctf_estimate/apof.simple >> LOG
 echo " >>> PROGRAM: extract" >> LOG
-simple_exec prg=extract box=192 projfile=5_pick/apof.simple nparts=8 nthr=8
+simple_exec prg=extract box=192 projfile=5_pick/apof.simple nparts=8 nthr=8 >> LOG
 wc 5_pick/*box
 echo " >>> PROGRAM: abinitio2D" >> LOG
-simple_exec prg=abinitio2D ncls=50 mskdiam=160 nthr=24
+simple_exec prg=abinitio2D ncls=50 mskdiam=160 nthr=24 >> LOG
 echo " >>> PROGRAM: selection" >> LOG
 simple_exec prg=selection res_threshold=9 oritype=cls2D projfile=6_abinitio2D/apof.simple >> LOG
 #simple_exec prg=map_cavgs_selection stk2=abinitio2d_selected.spi
 echo " >>> PROGRAM: abinitio3D" >> LOG
-simple_exec prg=abinitio3D pgrp=o mskdiam=160 nthr=40
+simple_exec prg=abinitio3D pgrp=o mskdiam=160 nthr=40 >> LOG
 
 
 #simple_exec prg=new_project projname=apof
