@@ -1,6 +1,6 @@
 simple_exec prg=new_project projname=apof
 cd apof/
-filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/movies
+filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/movies 50
 echo " >>> PROGRAM: import_movies" > LOG
 simple_exec prg=import_movies cs=2.7 fraca=0.1 kv=300 smpd=0.693 filetab=movies.txt >> LOG
 echo " >>> PROGRAM: motion_correct" >> LOG
