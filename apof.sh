@@ -4,7 +4,7 @@ filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239
 echo " >>> PROGRAM: import_movies" > LOG
 simple_exec prg=import_movies cs=2.7 fraca=0.1 kv=300 smpd=0.693 filetab=movies.txt
 echo " >>> PROGRAM: motion_correct" >> LOG
-simple_exec prg=motion_correct nparts=5 nthr=8 gainref=/mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/20221214_114106_EER_GainReference.gain total_dose=51.8 smpd_downscale=1.3
+simple_exec prg=motion_correct nparts=5 nthr=8 gainref=/mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/gain/20221214_114106_EER_GainReference.gain total_dose=51.8 smpd_downscale=1.3
 echo " >>> PROGRAM: ctf_estimate" >> LOG
 simple_exec prg=ctf_estimate nparts=5 nthr=8
 simple_exec prg=oristats oritab=3_ctf_estimate/apoferritin_subset.simple nthr=1 ctfstats=yes oritype=mic
