@@ -1,39 +1,60 @@
-# SIMPLE Data Sets Test Report - via self-hosted runner
-# Requires to install https://github.com/apps/artifact-ci
 name: Build SIMPLE & Run Data Sets (Linux/MacOS)
 
 on:
   push: {}
-
   schedule:
-    # Runs at 00:00 UTC every day (Nightly)
     - cron: '0 0 * * *'
-
-  # manually trigger for testing
   workflow_dispatch:
 
-jobs:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
+jobs:
   build_self_hosted:
     name: Build on self-hosted runner
     runs-on: [self-hosted, linux]
-    timeout-minutes: 1440  # Increases the individual job limit to 24 hours
+    timeout-minutes: 1440
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run tests 
+      - name: Run tests
         run: |
-             which simple_exec
-             ./betagal.sh
-             ./apof.sh
-             ./make_report.sh betagal apof
+          which simple_exec
+          ./betagal.sh
+          ./make_report.sh betagal 
+          #./apof.sh
+          #./make_report.sh betagal apof
 
-      - name: Copy report
-        run: mkdir -p build && cp report.html ./build// 
+      - name: Prepare report for Pages
+        run: |
+          mkdir -p build
+          cp report.html build/report.html
+          cp report.html build/index.html
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload downloadable artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: my-artifact
-          path: build/ 
+          name: simple-data-sets-report
+          path: build/
 
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
 
+  deploy_pages:
+    name: Deploy report to GitHub Pages
+    needs: build_self_hosted
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
