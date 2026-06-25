@@ -24,7 +24,7 @@ jobs:
         run: |
           which simple_exec
           ./betagal.sh
-          ./make_report.sh betagal 
+          ./make_report.sh betagal
           #./apof.sh
           #./make_report.sh betagal apof
 
@@ -41,7 +41,7 @@ jobs:
           path: build/
 
       - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: build
 
@@ -49,6 +49,10 @@ jobs:
     name: Deploy report to GitHub Pages
     needs: build_self_hosted
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
 
     environment:
       name: github-pages
