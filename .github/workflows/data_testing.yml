@@ -24,9 +24,8 @@ jobs:
         run: |
           which simple_exec
           ./betagal.sh
-          ./make_report.sh betagal
-          #./apof.sh
-          #./make_report.sh betagal apof
+          ./apof.sh
+          ./make_report.sh betagal apof
 
       - name: Prepare report for Pages
         run: |
