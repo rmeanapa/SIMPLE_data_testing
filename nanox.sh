@@ -8,7 +8,7 @@ single_exec prg=tseries_motion_correct nparts=6 nthr=12 >> LOG
 echo " >>> PROGRAM: tseries_make_pickavg" >> LOG
 single_exec prg=tseries_make_pickavg nthr=20 >> LOG
 echo " >>> PROGRAM: track_particles" >> LOG
-single_exec prg=track_particles boxfile=../positions_all.box fbody=tracked_ptcl nthr=12 >> LOG  
+single_exec prg=track_particles boxfile=../positions_all.box fbody=tracked_ptcl nthr=32 >> LOG  
 cd tracked_ptcl_01
 echo " >>> PROGRAM: trajectory_denoise" >> LOG
 single_exec prg=trajectory_denoise stk=tracked_ptcl_01.mrc smpd=0.358 nthr=40 >> LOG
