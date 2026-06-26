@@ -1,4 +1,4 @@
-name: Build SIMPLE & Run Data Sets (Linux/MacOS)
+name: Run & Display SIMPLE Data Sets
 
 on:
   push: {}
