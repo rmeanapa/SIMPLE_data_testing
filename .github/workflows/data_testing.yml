@@ -25,7 +25,8 @@ jobs:
           which simple_exec
           ./betagal.sh
           ./apof.sh
-          ./make_report.sh betagal apof
+          ./proteasome.sh
+          ./make_report.sh betagal apof proteasome
 
       - name: Prepare report for Pages
         run: |

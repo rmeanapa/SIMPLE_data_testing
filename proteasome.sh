@@ -8,19 +8,21 @@ simple_exec prg=motion_correct nparts=16 nthr=4 gainref=/mnt/beegfs/elmlund/test
 echo " >>> PROGRAM: ctf_estimate" >> LOG
 simple_exec prg=ctf_estimate nparts=16 nthr=4 >> LOG
 echo " >>> PROGRAM: oristats" >> LOG
- simple_exec prg=oristats oritab=3_ctf_estimate/proteasome.simple nthr=1 ctfstats=yes oritype=mic >> LOG
+simple_exec prg=oristats oritab=3_ctf_estimate/proteasome.simple nthr=1 ctfstats=yes oritype=mic >> LOG
 echo " >>> PROGRAM: selection" >> LOG
-simple_exec prg=selection projfile=3_ctf_estimate/proteasome.simple  ctfresthreshold=6 icefracthreshold=1 oritype=mic >> LOG
-#echo " >>> PROGRAM: print_project" >> LOG
-#simple_exec prg=print_project_field oritype=mic projfile=4_selection/proteasome.simple | awk '{print $6}' | awk -F'=' '{print $2}' > ctf_icefrac_selection.txt 
+simple_exec prg=selection projfile=3_ctf_estimate/proteasome.simple ctfresthreshold=6 icefracthreshold=1 oritype=mic >> LOG
+echo " >>> PROGRAM: print_project" >> LOG
+simple_exec prg=print_project_field oritype=mic projfile=4_selection/proteasome.simple | awk '{print $6}' | awk -F'=' '{print $2}' > ctf_icefrac_selection.txt 
+
 #echo " >>> PROGRAM: mini_stream" >> LOG
 #simple_exec prg=mini_stream cs=2.7 fraca=0.1 kv=300 smpd=0.6575 filetab=ctf_icefrac_selection.txt nparts=16 nthr=4 >> LOG
+
 echo " >>> PROGRAM: pick" >> LOG
-simple_exec prg=pick picker=segdiam projfile=4_selection/proteasome.simple nparts=5 nthr=8 >> LOG
+simple_exec prg=pick picker=segdiam projfile=3_ctf_estimate/proteasome.simple nparts=5 nthr=8 >> LOG
 echo " >>> PROGRAM: extract" >> LOG
 simple_exec prg=extract box=256 nparts=5 nthr=8 projfile=5_pick/proteasome.simple >> LOG
 echo " >>> PROGRAM: abinitio2D" >> LOG
-simple_exec prg=abinitio2D ncls=100 mskdiam=190 nthr=32 projfile=6_extract/proteasome.simple >> LOG
+simple_exec prg=abinitio2D ncls=100 mskdiam=190 nthr=32 projfile=6_extract/proteasome.simple >> LOG 
 echo " >>> PROGRAM: selection" >> LOG
 simple_exec prg=selection res_threshold=9 oritype=cls2D projfile=7_abinitio2D/proteasome.simple >> LOG
 echo " >>> PROGRAM: abinitio3D" >> LOG
