@@ -13,6 +13,8 @@ fi
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 OUTPUT="$(pwd)/report.html"
 ROOT=""
+MOVIE_IMAGE_SAMPLE_LIMIT=10
+MOVIE_IMAGE_SAMPLE_THRESHOLD=100
 
 SYSTEM_ROOTS=()
 for root_arg in "$@"; do
@@ -579,6 +581,25 @@ sort_sections() {
   ' | sort -t'|' -k1,1nr -k2,2 | awk -F'|' '{print $2}'
 }
 
+should_sample_movie_images() {
+  local section="$1"
+  local image_count="$2"
+  local section_program
+
+  section_program="${section%%/*}"
+  section_program="${section_program#*_}"
+
+  [[ $image_count -gt $MOVIE_IMAGE_SAMPLE_THRESHOLD ]] || return 1
+  [[ "$section_program" == "motion_correct" || "$section_program" == "movies" || "$section" == *movie* || "$section" == *movies* ]]
+}
+
+sample_images() {
+  awk 'BEGIN { srand() } { printf "%.12f\t%s\n", rand(), $0 }' |
+    sort -n |
+    head -n "$MOVIE_IMAGE_SAMPLE_LIMIT" |
+    cut -f2-
+}
+
 append_system_report() {
   local system_root="$1"
   local system_name
@@ -594,7 +615,10 @@ append_system_report() {
   local sections=()
   local sorted_sections=()
   local section_images=()
+  local sampled_images=()
   local has_images
+  local original_image_count
+  local sampled_movie_images
   local candidate
   local existing
 
@@ -661,7 +685,23 @@ append_system_report() {
       done
     fi
 
+    original_image_count=${#section_images[@]}
+    sampled_movie_images=0
+    if should_sample_movie_images "$section" "$original_image_count"; then
+      sampled_images=()
+      while IFS= read -r jpg; do
+        sampled_images+=("$jpg")
+      done < <(printf '%s\n' "${section_images[@]}" | sample_images)
+      section_images=("${sampled_images[@]}")
+      sampled_movie_images=1
+    fi
+
     printf '<h2>%s</h2>\n' "$(printf '%s' "$section" | html_escape)" >> "$OUTPUT"
+
+    if [[ $sampled_movie_images -eq 1 ]]; then
+      printf '<p class="image-note">Showing %s random movie JPEGs out of %s.</p>\n' \
+        "$MOVIE_IMAGE_SAMPLE_LIMIT" "$original_image_count" >> "$OUTPUT"
+    fi
 
     has_images=0
     if [[ ${#section_images[@]} -gt 0 ]]; then
@@ -714,6 +754,7 @@ cat > "$OUTPUT" <<'HTML_HEAD'
     body { font-family: sans-serif; background: #f4f4f4; margin: 0; padding: 8px; }
     h1   { color: #333; }
     h2   { color: #555; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 32px; }
+    .image-note { color: #555; font-size: 13px; margin: 8px 0 0; }
     .system-report {
       margin-bottom: 48px;
     }
