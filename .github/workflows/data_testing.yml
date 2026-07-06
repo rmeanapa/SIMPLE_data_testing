@@ -31,7 +31,7 @@ jobs:
           ./betagal.sh
           ./apof.sh
           ./proteasome.sh
-          ./make_report.sh betagal apof 
+          ./make_report.sh betagal apof proteasome
           #./nanox.sh
           #./make_report.sh betagal apof proteasome nanox
 
