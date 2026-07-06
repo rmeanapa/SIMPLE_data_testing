@@ -23,6 +23,7 @@ jobs:
       - name: Run tests
         run: |
           which simple_exec
+          echo $SIMPLE_PATH
           ./betagal.sh
           ./apof.sh
           ./proteasome.sh
