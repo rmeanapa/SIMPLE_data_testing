@@ -15,7 +15,7 @@ echo " >>> PROGRAM: pick" >> LOG
 simple_exec prg=pick picker=segdiam nparts=5 nthr=8 projfile=3_ctf_estimate/apof.simple >> LOG
 echo " >>> PROGRAM: extract" >> LOG
 simple_exec prg=extract box=192 projfile=4_pick/apof.simple nparts=8 nthr=8 >> LOG
-wc 5_pick/*box
+wc 4_pick/*box
 echo " >>> PROGRAM: abinitio2D" >> LOG
 simple_exec prg=abinitio2D ncls=50 mskdiam=160 nthr=24 >> LOG
 echo " >>> PROGRAM: selection" >> LOG
