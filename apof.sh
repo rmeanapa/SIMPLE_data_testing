@@ -7,7 +7,7 @@ echo " >>> PROGRAM: motion_correct" >> LOG
 simple_exec prg=motion_correct nparts=5 nthr=8 gainref=/mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/gain/20221214_114106_EER_GainReference.gain total_dose=51.8 smpd_downscale=1.3 >> LOG
 echo " >>> PROGRAM: ctf_estimate" >> LOG
 simple_exec prg=ctf_estimate nparts=5 nthr=8 >> LOG
-simple_exec prg=oristats oritab=3_ctf_estimate/apoferritin_subset.simple nthr=1 ctfstats=yes oritype=mic >> LOG
+simple_exec prg=oristats oritab=3_ctf_estimate/apof.simple nthr=1 ctfstats=yes oritype=mic >> LOG
 #simple_exec prg=mini_stream cs=2.7 fraca=0.1 kv=300 smpd=1.3 filetab=filetab.txt nthr=24
 #simple_exec prg=convert smpd=1.3 stk=mini_stream_selection.spi outstk=mini_stream_selection.mrc
 #simple_exec prg=pick pickrefs=mini_stream_selection.mrc nparts=5 nthr=8 projfile=3_ctf_estimate/apof.simple

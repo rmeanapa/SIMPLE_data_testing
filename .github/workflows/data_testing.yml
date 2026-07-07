@@ -30,12 +30,12 @@ jobs:
           echo $SIMPLE_PATH
           ./betagal.sh
           ./apof.sh
-          #./proteasome.sh
+          ./proteasome.sh
           #./nanox.sh
 
       - name: Prepare report for Pages
         run: |
-          systems=(betagal apof proteasome nanox)
+          systems=(betagal apof proteasome)
           mkdir -p build/reports
 
           for system in "${systems[@]}"; do
