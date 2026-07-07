@@ -30,15 +30,84 @@ jobs:
           echo $SIMPLE_PATH
           ./betagal.sh
           ./apof.sh
-          ./proteasome.sh
-          ./nanox.sh
-          ./make_report.sh betagal apof proteasome nanox
+          #./proteasome.sh
+          #./nanox.sh
 
       - name: Prepare report for Pages
         run: |
-          mkdir -p build
-          cp report.html build/report.html
-          cp report.html build/index.html
+          systems=(betagal apof proteasome nanox)
+          mkdir -p build/reports
+
+          for system in "${systems[@]}"; do
+            ./make_report.sh "$system"
+            cp "report_${system}.html" "build/reports/report_${system}.html"
+          done
+
+          generated_at="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          cat > build/index.html <<HTML
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>SIMPLE data testing reports</title>
+            <style>
+              body {
+                color: #111827;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                line-height: 1.5;
+                margin: 0;
+                padding: 2rem;
+              }
+              main {
+                margin: 0 auto;
+                max-width: 760px;
+              }
+              h1 {
+                font-size: 2rem;
+                margin-bottom: 0.25rem;
+              }
+              .timestamp {
+                color: #4b5563;
+                margin-bottom: 2rem;
+              }
+              ul {
+                list-style: none;
+                padding: 0;
+              }
+              li + li {
+                border-top: 1px solid #e5e7eb;
+              }
+              a {
+                color: #0f766e;
+                display: block;
+                font-size: 1.1rem;
+                font-weight: 650;
+                padding: 0.75rem 0;
+                text-decoration: none;
+              }
+              a:hover {
+                text-decoration: underline;
+              }
+            </style>
+          </head>
+          <body>
+            <main>
+              <h1>SIMPLE data testing reports</h1>
+              <p class="timestamp">Generated ${generated_at}</p>
+              <ul>
+          HTML
+
+          for system in "${systems[@]}"; do
+            printf '        <li><a href="reports/report_%s.html">%s</a></li>\n' "$system" "$system" >> build/index.html
+          done
+
+          cat >> build/index.html <<'HTML'
+              </ul>
+            </main>
+          </body>
+          </html>
+          HTML
 
       - name: Upload downloadable artifact
         uses: actions/upload-artifact@v4
