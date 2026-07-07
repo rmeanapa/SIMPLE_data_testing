@@ -31,9 +31,8 @@ jobs:
           ./betagal.sh
           ./apof.sh
           ./proteasome.sh
-          ./make_report.sh betagal apof proteasome
-          #./nanox.sh
-          #./make_report.sh betagal apof proteasome nanox
+          ./nanox.sh
+          ./make_report.sh betagal apof proteasome nanox
 
       - name: Prepare report for Pages
         run: |
