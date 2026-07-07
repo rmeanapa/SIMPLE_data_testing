@@ -2,6 +2,9 @@
 #
 # Usage:
 #   ./make_report.sh <system_dir> [system_dir ...]
+#
+# By default this writes report_<system_dir>.html. Multiple input directories
+# are joined into a single report_<system1>_<system2>.html file.
 
 set -euo pipefail
 
@@ -11,7 +14,6 @@ if [[ $# -lt 1 ]]; then
 fi
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-OUTPUT="$(pwd)/report.html"
 ROOT=""
 MOVIE_IMAGE_SAMPLE_LIMIT=10
 MOVIE_IMAGE_SAMPLE_THRESHOLD=100
@@ -27,6 +29,18 @@ for root_arg in "$@"; do
     exit 1
   fi
 done
+
+report_name_part=""
+for system_root in "${SYSTEM_ROOTS[@]}"; do
+  system_name="$(basename "$system_root")"
+  system_name="${system_name//[^A-Za-z0-9._-]/_}"
+  if [[ -z "$report_name_part" ]]; then
+    report_name_part="$system_name"
+  else
+    report_name_part="${report_name_part}_${system_name}"
+  fi
+done
+OUTPUT="${REPORT_OUTPUT:-$(pwd)/report_${report_name_part}.html}"
 
 html_escape() {
   sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
