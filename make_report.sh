@@ -604,7 +604,7 @@ should_sample_movie_images() {
   section_program="${section_program#*_}"
 
   [[ $image_count -gt $MOVIE_IMAGE_SAMPLE_THRESHOLD ]] || return 1
-  [[ "$section_program" == "motion_correct" || "$section_program" == "movies" || "$section" == *movie* || "$section" == *movies* ]]
+  [[ "$section_program" == "motion_correct" || "$section_program" == *_motion_correct || "$section_program" == "movies" || "$section" == *movie* || "$section" == *movies* ]]
 }
 
 sample_images() {
