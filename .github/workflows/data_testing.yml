@@ -11,6 +11,9 @@ permissions:
   pages: write
   id-token: write
 
+env:
+  SIMPLE_SYSTEMS: betagal apof proteasome nanox
+
 jobs:
   build_self_hosted:
     name: Build on self-hosted runner
@@ -28,17 +31,15 @@ jobs:
           export PATH=${SIMPLE_PATH}/scripts:${SIMPLE_PATH}/bin:${PATH}
           which simple_exec
           echo $SIMPLE_PATH
-          ./betagal.sh
-          ./apof.sh
-          ./proteasome.sh
-          #./nanox.sh
+          for system in $SIMPLE_SYSTEMS; do
+            bash "./${system}.sh"
+          done
 
       - name: Prepare report for Pages
         run: |
-          systems=(betagal apof proteasome)
           mkdir -p build/reports
 
-          for system in "${systems[@]}"; do
+          for system in $SIMPLE_SYSTEMS; do
             ./make_report.sh "$system"
             cp "report_${system}.html" "build/reports/report_${system}.html"
           done
@@ -98,7 +99,7 @@ jobs:
               <ul>
           HTML
 
-          for system in "${systems[@]}"; do
+          for system in $SIMPLE_SYSTEMS; do
             printf '        <li><a href="reports/report_%s.html">%s</a></li>\n' "$system" "$system" >> build/index.html
           done
 
