@@ -63,6 +63,37 @@ relative_to_root() {
   esac
 }
 
+log_lookup_section() {
+  local section="$1"
+  local base
+  local log_file="$ROOT/LOG"
+
+  if [[ "$section" == */* && -f "$log_file" ]]; then
+    base=${section##*/}
+    if grep -q "^[[:space:]]*>>> EXECUTION DIRECTORY:[[:space:]]*$base[[:space:]]*$" "$log_file"; then
+      printf '%s\n' "$base"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "$section"
+}
+
+resolve_report_section() {
+  local section="$1"
+  local match=""
+
+  if [[ "$section" != */* && -d "$ROOT/4_track_particles" ]]; then
+    while IFS= read -r match; do
+      [[ -n "$match" ]] || continue
+      relative_to_root "$match"
+      return 0
+    done < <(find "$ROOT/4_track_particles" -type d -name "$section" | sort)
+  fi
+
+  printf '%s\n' "$section"
+}
+
 base64_one_line() {
   local file="$1"
 
@@ -107,6 +138,7 @@ log_program_for_section() {
   local log_file="$ROOT/LOG"
 
   [[ -f "$log_file" ]] || return 1
+  section=$(log_lookup_section "$section")
 
   awk -v section="$section" '
     /^[[:space:]]*>>> PROGRAM[[:space:]]*:/ {
@@ -135,6 +167,7 @@ log_block_for_section() {
   local log_file="$ROOT/LOG"
 
   [[ -f "$log_file" ]] || return 1
+  section=$(log_lookup_section "$section")
 
   awk -v section="$section" '
     BEGIN {
@@ -483,6 +516,16 @@ append_log_tail() {
   } >> "$OUTPUT"
 }
 
+is_movie_image_section() {
+  local section="$1"
+  local section_program
+
+  section_program="${section%%/*}"
+  section_program="${section_program#*_}"
+
+  [[ "$section_program" == "motion_correct" || "$section_program" == *_motion_correct || "$section_program" == "movies" || "$section" == *movie* || "$section" == *movies* ]]
+}
+
 selected_jpgs_for_root() {
   local jpg
   local dir
@@ -492,10 +535,15 @@ selected_jpgs_for_root() {
   local regular_max
   local keep
   local section
+  local candidate_section
   local top_section
   local rank
   local all_jpgs=()
   local jpgs=()
+  local selected_jpgs=()
+  local movie_sections=()
+  local movie_section_jpgs=()
+  local sampled_jpgs=()
 
   while IFS= read -r jpg; do
     all_jpgs+=("$jpg")
@@ -506,8 +554,8 @@ selected_jpgs_for_root() {
   fi
 
   for jpg in "${all_jpgs[@]}"; do
-    dir=$(dirname "$jpg")
-    base=$(basename "$jpg")
+    dir=${jpg%/*}
+    base=${jpg##*/}
     keep=1
 
     if [[ -f "$dir/shaped_ranked_cavgs.jpg" && "$base" == cavgs_iter*.jpg ]]; then
@@ -538,10 +586,59 @@ selected_jpgs_for_root() {
     return 0
   fi
 
+  for jpg in "${jpgs[@]}"; do
+    dir=${jpg%/*}
+    section=${dir#"$ROOT"/}
+    if is_movie_image_section "$section"; then
+      if [[ ${#movie_sections[@]} -eq 0 ]]; then
+        movie_sections+=("$section")
+      else
+        keep=1
+        for candidate_section in "${movie_sections[@]}"; do
+          if [[ "$candidate_section" == "$section" ]]; then
+            keep=0
+            break
+          fi
+        done
+        if [[ $keep -eq 1 ]]; then
+          movie_sections+=("$section")
+        fi
+      fi
+    else
+      selected_jpgs+=("$jpg")
+    fi
+  done
+
+  if [[ ${#movie_sections[@]} -gt 0 ]]; then
+    for section in "${movie_sections[@]}"; do
+      movie_section_jpgs=()
+      for jpg in "${jpgs[@]}"; do
+        dir=${jpg%/*}
+        if [[ "${dir#"$ROOT"/}" == "$section" ]]; then
+          movie_section_jpgs+=("$jpg")
+        fi
+      done
+
+      if [[ ${#movie_section_jpgs[@]} -gt $MOVIE_IMAGE_SAMPLE_THRESHOLD ]]; then
+        sampled_jpgs=()
+        while IFS= read -r jpg; do
+          sampled_jpgs+=("$jpg")
+        done < <(printf '%s\n' "${movie_section_jpgs[@]}" | sample_images)
+        if [[ ${#sampled_jpgs[@]} -gt 0 ]]; then
+          selected_jpgs+=("${sampled_jpgs[@]}")
+        fi
+      else
+        selected_jpgs+=("${movie_section_jpgs[@]}")
+      fi
+    done
+
+    jpgs=("${selected_jpgs[@]}")
+  fi
+
   {
     for jpg in "${jpgs[@]}"; do
-      dir=$(dirname "$jpg")
-      section=$(relative_to_root "$dir")
+      dir=${jpg%/*}
+      section=${dir#"$ROOT"/}
       top_section="${section%%/*}"
       rank=0
       if [[ "$top_section" =~ ^([0-9]+) ]]; then
@@ -582,29 +679,41 @@ filesystem_sections_for_root() {
 
 sort_sections() {
   awk '
+    function numeric_sort_key(section, parts, n, i, base, rank, rank_count, key, max_levels) {
+      max_levels = 8
+      n = split(section, parts, "/")
+      rank_count = 0
+      key = ""
+
+      for (i = 1; i <= n && rank_count < max_levels; i++) {
+        base = parts[i]
+        if (match(base, /^[0-9]+_/)) {
+          rank = substr(base, RSTART, RLENGTH - 1) + 0
+          key = key sprintf("%09d", 999999999 - rank)
+          rank_count++
+        }
+      }
+
+      for (i = rank_count + 1; i <= max_levels; i++) {
+        key = key "999999999"
+      }
+
+      return key
+    }
+
     !seen[$0]++ {
       section = $0
-      top = section
-      sub(/\/.*/, "", top)
-      rank = 0
-      if (match(top, /^[0-9]+/)) {
-        rank = substr(top, RSTART, RLENGTH)
-      }
-      printf "%09d|%s\n", rank, section
+      printf "%s|%s\n", numeric_sort_key(section), section
     }
-  ' | sort -t'|' -k1,1nr -k2,2 | awk -F'|' '{print $2}'
+  ' | sort -t'|' -k1,1 -k2,2 | awk -F'|' '{print $2}'
 }
 
 should_sample_movie_images() {
   local section="$1"
   local image_count="$2"
-  local section_program
-
-  section_program="${section%%/*}"
-  section_program="${section_program#*_}"
 
   [[ $image_count -gt $MOVIE_IMAGE_SAMPLE_THRESHOLD ]] || return 1
-  [[ "$section_program" == "motion_correct" || "$section_program" == *_motion_correct || "$section_program" == "movies" || "$section" == *movie* || "$section" == *movies* ]]
+  is_movie_image_section "$section"
 }
 
 sample_images() {
@@ -647,6 +756,8 @@ append_system_report() {
     local candidate_section="$1"
     local existing_section
 
+    candidate_section=$(resolve_report_section "$candidate_section")
+
     if [[ ${#sections[@]} -gt 0 ]]; then
       for existing_section in "${sections[@]}"; do
         if [[ "$existing_section" == "$candidate_section" ]]; then
@@ -660,8 +771,8 @@ append_system_report() {
 
   if [[ ${#jpgs[@]} -gt 0 ]]; then
     for jpg in "${jpgs[@]}"; do
-      dir=$(dirname "$jpg")
-      add_section_once "$(relative_to_root "$dir")"
+      dir=${jpg%/*}
+      add_section_once "${dir#"$ROOT"/}"
     done
   fi
 
@@ -692,8 +803,8 @@ append_system_report() {
     section_images=()
     if [[ ${#jpgs[@]} -gt 0 ]]; then
       for jpg in "${jpgs[@]}"; do
-        dir=$(dirname "$jpg")
-        if [[ "$(relative_to_root "$dir")" == "$section" ]]; then
+        dir=${jpg%/*}
+        if [[ "${dir#"$ROOT"/}" == "$section" ]]; then
           section_images+=("$jpg")
         fi
       done
@@ -726,7 +837,7 @@ append_system_report() {
     if [[ ${#section_images[@]} -gt 0 ]]; then
       for jpg in "${section_images[@]}"; do
         b64=$(base64_one_line "$jpg")
-        fname=$(basename "$jpg")
+        fname=${jpg##*/}
         safe_fname=$(printf '%s' "$fname" | html_escape)
 
         card_class="card"
