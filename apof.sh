@@ -1,7 +1,7 @@
-simple_exec prg=new_project projname=apof
-cd apof/
-filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/movies 50
-echo " >>> PROGRAM: import_movies" > LOG
+mkdir -p apof; cd apof
+simple_exec prg=new_project projname=apof dir=./ > LOG
+filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/movies 50 >> LOG
+echo " >>> PROGRAM: import_movies" >> LOG
 simple_exec prg=import_movies cs=2.7 fraca=0.1 kv=300 smpd=0.693 filetab=movies.txt >> LOG
 echo " >>> PROGRAM: motion_correct" >> LOG
 simple_exec prg=motion_correct nparts=5 nthr=8 gainref=/mnt/beegfs/elmlund/testing-datasets/apoferritin/20221214_105239_vitroEase_apoF_bf15_300kv_highres/gain/20221214_114106_EER_GainReference.gain total_dose=51.8 smpd_downscale=1.3 >> LOG
@@ -15,7 +15,7 @@ echo " >>> PROGRAM: pick" >> LOG
 simple_exec prg=pick picker=segdiam nparts=5 nthr=8 projfile=3_ctf_estimate/apof.simple >> LOG
 echo " >>> PROGRAM: extract" >> LOG
 simple_exec prg=extract box=192 projfile=4_pick/apof.simple nparts=8 nthr=8 >> LOG
-wc 4_pick/*box
+wc 4_pick/*box >> LOG
 echo " >>> PROGRAM: abinitio2D" >> LOG
 simple_exec prg=abinitio2D ncls=50 mskdiam=160 nthr=24 >> LOG
 echo " >>> PROGRAM: selection" >> LOG

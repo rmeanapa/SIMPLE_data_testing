@@ -1,7 +1,7 @@
-simple_exec prg=new_project projname=proteasome
-cd proteasome 
-filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/proteasome/movies  
-echo " >>> PROGRAM: import_movies" > LOG
+mkdir -p proteasome; cd proteasome
+simple_exec prg=new_project projname=proteasome dir=./ > LOG
+filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/proteasome/movies >> LOG
+echo " >>> PROGRAM: import_movies" >> LOG
 simple_exec prg=import_movies cs=2.7 fraca=0.1 kv=300 smpd=0.6575 filetab=movies.txt >> LOG
 echo " >>> PROGRAM: motion_correct" >> LOG
 simple_exec prg=motion_correct nparts=16 nthr=4 gainref=/mnt/beegfs/elmlund/testing-datasets/proteasome/gain/norm-amibox05-0.mrc total_dose=53 smpd_downscale=1.3  flipgain=y >> LOG

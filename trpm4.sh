@@ -1,7 +1,7 @@
-simple_exec prg=new_project projname=trpm4  > LOG
-cd trpm4 
-filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/TRPM4/20231113_161724_83_hsTRPM4_BA_5mgml_2s_m10/movies 50
-echo " >>> PROGRAM: import_movies" > LOG
+mkdir -p trpm4; cd trpm4
+simple_exec prg=new_project projname=trpm4 dir=./  > LOG
+filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/TRPM4/20231113_161724_83_hsTRPM4_BA_5mgml_2s_m10/movies 50 >> LOG
+echo " >>> PROGRAM: import_movies" >> LOG
 simple_exec prg=import_movies cs=2.7 fraca=0.1 kv=300 smpd=0.732 filetab=movies.txt >> LOG
 echo " >>> PROGRAM: motion_correct" >> LOG
 simple_exec prg=motion_correct nparts=5 nthr=8 gainref=/mnt/beegfs/elmlund/testing-datasets/TRPM4/20231113_161724_83_hsTRPM4_BA_5mgml_2s_m10/gain/20231019_151343_EER_GainReference.gain total_dose=55 smpd_downscale=1.3 >> LOG
@@ -24,4 +24,3 @@ echo " >>> PROGRAM: selection" >> LOG
 simple_exec prg=selection res_threshold=9 oritype=cls2D projfile=7_abinitio2D/trpm4.simple >> LOG
 echo " >>> PROGRAM: abinitio3D" >> LOG
 simple_exec prg=abinitio3D pgrp=d2 mskdiam=190 nthr=32 projfile=8_selection/trpm4.simple >> LOG
-
