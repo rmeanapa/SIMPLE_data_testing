@@ -21,6 +21,6 @@ simple_exec prg=extract box=256 nparts=5 nthr=8 projfile=5_pick/trpm4.simple >> 
 echo " >>> PROGRAM: abinitio2D" >> LOG
 simple_exec prg=abinitio2D ncls=100 mskdiam=190 nthr=32 projfile=6_extract/trpm4.simple >> LOG 
 echo " >>> PROGRAM: selection" >> LOG
-simple_exec prg=selection res_threshold=9 oritype=cls2D projfile=7_abinitio2D/trpm4.simple >> LOG
+simple_exec prg=selection res_threshold=50 oritype=cls2D projfile=7_abinitio2D/trpm4.simple >> LOG
 echo " >>> PROGRAM: abinitio3D" >> LOG
 simple_exec prg=abinitio3D pgrp=d2 mskdiam=190 nthr=32 projfile=8_selection/trpm4.simple >> LOG
