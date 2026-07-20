@@ -3,10 +3,12 @@
 # Usage:
 #   ./make_report.sh <system_dir> [system_dir ...]
 #
-# By default this writes report_<system_dir>.html. Multiple input directories
-# are joined into a single report_<system1>_<system2>.html file.
+# By default this writes build/index.html plus per-system reports in
+# build/reports/. Set REPORT_SITE_DIR to choose a different output directory.
 
 set -euo pipefail
+
+PAGES_OUTPUT_DIR="${REPORT_SITE_DIR:-build}"
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <system_dir> [system_dir ...]" >&2
@@ -868,7 +870,8 @@ HTML_CARD
   printf '</section>\n' >> "$OUTPUT"
 }
 
-cat > "$OUTPUT" <<'HTML_HEAD'
+write_report_html() {
+  cat > "$OUTPUT" <<'HTML_HEAD'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -971,13 +974,175 @@ cat > "$OUTPUT" <<'HTML_HEAD'
 <body>
 HTML_HEAD
 
-for system_root in "${SYSTEM_ROOTS[@]}"; do
-  append_system_report "$system_root"
-done
+  for system_root in "${SYSTEM_ROOTS[@]}"; do
+    append_system_report "$system_root"
+  done
 
-cat >> "$OUTPUT" <<'HTML_FOOT'
+  cat >> "$OUTPUT" <<'HTML_FOOT'
 </body>
 </html>
 HTML_FOOT
 
-echo "Report written to: $OUTPUT"
+  echo "Report written to: $OUTPUT"
+}
+
+write_pages_site() {
+  local output_dir="$1"
+  local reports_dir="$output_dir/reports"
+  local generated_at
+  local system_root
+  local system_name
+  local system_label
+  local report_file
+  local preview
+  local preview_name
+  local preview_name_safe
+  local preview_b64
+  local preview_count
+  local original_output="$OUTPUT"
+  local original_roots=("${SYSTEM_ROOTS[@]}")
+
+  mkdir -p "$reports_dir"
+
+  for system_root in "${original_roots[@]}"; do
+    system_name="$(basename "$system_root")"
+    system_name="${system_name//[^A-Za-z0-9._-]/_}"
+    report_file="$reports_dir/report_${system_name}.html"
+    SYSTEM_ROOTS=("$system_root")
+    OUTPUT="$report_file"
+    write_report_html
+  done
+
+  SYSTEM_ROOTS=("${original_roots[@]}")
+  OUTPUT="$original_output"
+  generated_at="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+
+  cat > "$output_dir/index.html" <<HTML_INDEX_HEAD
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SIMPLE data testing reports</title>
+  <style>
+    body {
+      color: #111827;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+      margin: 0;
+      padding: 2rem;
+    }
+    main {
+      margin: 0 auto;
+      max-width: 960px;
+    }
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 0.25rem;
+    }
+    .timestamp {
+      color: #4b5563;
+      margin-bottom: 2rem;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+    li + li {
+      border-top: 1px solid #e5e7eb;
+    }
+    .report-row {
+      align-items: center;
+      display: flex;
+      gap: 1rem;
+      justify-content: space-between;
+      min-height: 120px;
+      padding: 0.75rem 0;
+    }
+    a {
+      color: #0f766e;
+      font-size: 1.1rem;
+      font-weight: 650;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .volume-previews {
+      align-items: center;
+      display: flex;
+      flex: 1;
+      gap: 0.5rem;
+      justify-content: flex-end;
+      min-width: 0;
+    }
+    .volume-previews img {
+      background: #000;
+      border: 1px solid #d1d5db;
+      height: 108px;
+      max-width: 260px;
+      object-fit: contain;
+      width: min(32vw, 260px);
+    }
+    .no-preview {
+      color: #6b7280;
+      font-size: 0.9rem;
+    }
+    @media (max-width: 640px) {
+      .report-row {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .volume-previews {
+        justify-content: flex-start;
+        width: 100%;
+      }
+      .volume-previews img {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>SIMPLE data testing reports</h1>
+    <p class="timestamp">Generated ${generated_at}</p>
+    <ul>
+HTML_INDEX_HEAD
+
+  for system_root in "${original_roots[@]}"; do
+    system_name="$(basename "$system_root")"
+    system_name="${system_name//[^A-Za-z0-9._-]/_}"
+    system_label="$(printf '%s' "$system_name" | html_escape)"
+
+    printf '      <li class="report-row"><a href="reports/report_%s.html">%s</a><div class="volume-previews">' \
+      "$system_name" "$system_label" >> "$output_dir/index.html"
+
+    preview_count=0
+    while IFS= read -r preview; do
+      preview_count=$((preview_count + 1))
+      preview_name="$(basename "$preview")"
+      preview_name_safe="$(printf '%s' "$preview_name" | html_escape)"
+      preview_b64="$(base64_one_line "$preview")"
+      printf '<img src="data:image/jpeg;base64,%s" alt="%s %s">' \
+        "$preview_b64" "$system_label" "$preview_name_safe" >> "$output_dir/index.html"
+    done < <(find "$system_root" -type f -iname '*ortho*reproj*.jpg' | sort)
+
+    if [[ $preview_count -eq 0 ]]; then
+      printf '<span class="no-preview">No volume preview</span>' >> "$output_dir/index.html"
+    fi
+
+    printf '</div></li>\n' >> "$output_dir/index.html"
+  done
+
+  cat >> "$output_dir/index.html" <<'HTML_INDEX_FOOT'
+    </ul>
+  </main>
+</body>
+</html>
+HTML_INDEX_FOOT
+
+  echo "Pages index written to: $output_dir/index.html"
+}
+
+write_pages_site "$PAGES_OUTPUT_DIR"
