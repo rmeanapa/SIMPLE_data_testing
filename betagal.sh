@@ -18,5 +18,5 @@ echo " >>> PROGRAM: selection" >> LOG
 simple_exec prg=selection res_threshold=9 oritype=cls2D projfile=6_abinitio2D/betagal.simple >> LOG
 echo " >>> PROGRAM: abinitio3D" >> LOG
 simple_exec prg=abinitio3D pgrp=d2 mskdiam=190 nthr=32 projfile=7_selection/betagal.simple >> LOG
-echo " >>> PROGRAM: flex_eigenvol" >> LOG
-simple_exec prg=flex_eigenvol vol1=8_abinitio3D/rec_final_state01_lp.mrc nthr=32 projfile=8_abinitio3D/betagal.simple >> LOG
+#echo " >>> PROGRAM: flex_eigenvol" >> LOG
+#simple_exec prg=flex_eigenvol vol1=8_abinitio3D/rec_final_state01_lp.mrc nthr=32 projfile=8_abinitio3D/betagal.simple >> LOG
