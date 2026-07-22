@@ -1,7 +1,7 @@
 name: Run & Display SIMPLE Data Sets
 
 on:
-  push: {}
+  #push: {}
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
@@ -34,10 +34,12 @@ jobs:
           for system in $SIMPLE_SYSTEMS; do
             bash "./${system}.sh"
           done
+          simple_test_exec test=simulated_workflow_6vxx 
+          simple_test_exec test=simulated_workflow_1jxy 
 
       - name: Prepare report for Pages
         run: |
-          ./make_report.sh $SIMPLE_SYSTEMS
+          ./make_report.sh $SIMPLE_SYSTEMS simulated_workflow_6vxx simulated_workflow_1jxy
 
       - name: Upload downloadable artifact
         uses: actions/upload-artifact@v4
