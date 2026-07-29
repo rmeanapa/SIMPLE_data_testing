@@ -39,7 +39,7 @@ jobs:
 
       - name: Prepare report for Pages
         run: |
-          ./make_report.sh $SIMPLE_SYSTEMS simulated_workflow_6vxx simulated_workflow_1jxy
+          ./make_report.sh $SIMPLE_SYSTEMS 
           #./make_report.sh $SIMPLE_SYSTEMS simulated_workflow_6vxx simulated_workflow_1jxy
 
       - name: Upload downloadable artifact
