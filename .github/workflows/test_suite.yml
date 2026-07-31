@@ -21,12 +21,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run tests
+        shell: bash
         run: |
           export SIMPLE_EMAIL="my.name@uni.edu"
           export SIMPLE_QSYS="local"
           export SIMPLE_PATH=/home/meanapanedar2/SIMPLE/build
           export PATH=${SIMPLE_PATH}/scripts:${SIMPLE_PATH}/bin:${PATH}
           which simple_exec
+          which simple_test_exec
           echo $SIMPLE_PATH
-          bash "./run_simple_tests.sh --timeout 0 "
+          bash "${GITHUB_WORKSPACE}/run_simple_tests.sh" --timeout 0
 
