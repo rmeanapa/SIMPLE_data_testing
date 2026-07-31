@@ -1,4 +1,4 @@
-name: Run & Display SIMPLE Data Sets
+name: Run SIMPLE Test Suite
 
 on:
   push: {}
