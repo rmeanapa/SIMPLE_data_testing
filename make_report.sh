@@ -238,6 +238,120 @@ log_block_for_section() {
   ' "$log_file"
 }
 
+execution_time_for_section() {
+  local section="$1"
+
+  log_block_for_section "$section" | awk '
+    /Execution[[:space:]]+time:[[:space:]]*[0-9]+([.][0-9]+)?[[:space:]]*seconds/ {
+      value = $0
+      sub(/^.*Execution[[:space:]]+time:[[:space:]]*/, "", value)
+      sub(/[[:space:]]*seconds.*$/, "", value)
+      if (value ~ /^[0-9]+([.][0-9]+)?$/) {
+        elapsed = value
+        found = 1
+      }
+    }
+    END {
+      if (found) {
+        print elapsed
+      } else {
+        exit 1
+      }
+    }
+  '
+}
+
+format_duration() {
+  local seconds="$1"
+
+  awk -v total="$seconds" 'BEGIN {
+    hours = int(total / 3600)
+    minutes = int((total - (hours * 3600)) / 60)
+    secs = total - (hours * 3600) - (minutes * 60)
+
+    if (hours > 0) {
+      printf "%dh %02dm %04.1fs", hours, minutes, secs
+    } else if (minutes > 0) {
+      printf "%dm %04.1fs", minutes, secs
+    } else {
+      printf "%.1fs", secs
+    }
+  }'
+}
+
+format_timed_step_count() {
+  local count="$1"
+
+  if [[ $count -eq 1 ]]; then
+    printf '1 timed test step'
+  else
+    printf '%s timed test steps' "$count"
+  fi
+}
+
+timing_stats_for_sections() {
+  local section
+  local seconds
+  local count=0
+  local total=0
+
+  for section in "$@"; do
+    seconds=$(execution_time_for_section "$section" || true)
+    [[ -n "$seconds" ]] || continue
+    count=$((count + 1))
+    total=$(awk -v total="$total" -v seconds="$seconds" 'BEGIN { printf "%.10g", total + seconds }')
+  done
+
+  printf '%s|%s\n' "$count" "$total"
+}
+
+append_timing_summary() {
+  local section
+  local section_label
+  local program
+  local program_label
+  local seconds
+  local formatted
+  local stats
+  local count
+  local total
+
+  stats=$(timing_stats_for_sections "$@")
+  count=${stats%%|*}
+  total=${stats#*|}
+  [[ $count -gt 0 ]] || return 0
+
+  {
+    printf '<section class="timing-summary">\n'
+    printf '<div class="timing-heading"><h2>Execution times</h2><div class="timing-total"><strong>%s</strong><span>Total across %s</span></div></div>\n' \
+      "$(format_duration "$total")" "$(format_timed_step_count "$count")"
+    printf '<div class="timing-table-wrap"><table class="timing-table">\n'
+    printf '<thead><tr><th scope="col">Test step</th><th scope="col">Program</th><th scope="col">Duration</th></tr></thead><tbody>\n'
+  } >> "$OUTPUT"
+
+  for section in "$@"; do
+    seconds=$(execution_time_for_section "$section" || true)
+    [[ -n "$seconds" ]] || continue
+
+    program=$(log_program_for_section "$section" || true)
+    if [[ -z "$program" ]]; then
+      program="${section%%/*}"
+      program="${program#*_}"
+    fi
+    section_label=$(printf '%s' "$section" | html_escape)
+    program_label=$(printf '%s' "$program" | html_escape)
+    formatted=$(format_duration "$seconds")
+    printf '<tr><td>%s</td><td>%s</td><td><strong>%s</strong><span class="raw-seconds">%s seconds</span></td></tr>\n' \
+      "$section_label" "$program_label" "$formatted" "$seconds" >> "$OUTPUT"
+  done
+
+  {
+    printf '</tbody></table></div>\n'
+    printf '<p class="timing-note">Total is the sum of execution times recorded by SIMPLE in this test LOG.</p>\n'
+    printf '</section>\n'
+  } >> "$OUTPUT"
+}
+
 log_summary_for_section() {
   local section="$1"
   local program="$2"
@@ -744,6 +858,7 @@ append_system_report() {
   local has_images
   local original_image_count
   local sampled_movie_images
+  local section_seconds
   local candidate
   local existing
 
@@ -801,6 +916,8 @@ append_system_report() {
     printf '<p>SIMPLE test run</p>\n'
   } >> "$OUTPUT"
 
+  append_timing_summary "${sorted_sections[@]}"
+
   for section in "${sorted_sections[@]}"; do
     section_images=()
     if [[ ${#jpgs[@]} -gt 0 ]]; then
@@ -823,7 +940,11 @@ append_system_report() {
       sampled_movie_images=1
     fi
 
-    printf '<h2>%s</h2>\n' "$(printf '%s' "$section" | html_escape)" >> "$OUTPUT"
+    printf '<h2 class="section-heading"><span>%s</span>' "$(printf '%s' "$section" | html_escape)" >> "$OUTPUT"
+    if section_seconds=$(execution_time_for_section "$section" || true); [[ -n "$section_seconds" ]]; then
+      printf '<span class="duration-badge">%s</span>' "$(format_duration "$section_seconds")" >> "$OUTPUT"
+    fi
+    printf '</h2>\n' >> "$OUTPUT"
 
     if [[ $sampled_movie_images -eq 1 ]]; then
       printf '<p class="image-note">Showing %s random movie JPEGs out of %s.</p>\n' \
@@ -882,6 +1003,86 @@ write_report_html() {
     body { font-family: sans-serif; background: #f4f4f4; margin: 0; padding: 8px; }
     h1   { color: #333; }
     h2   { color: #555; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 32px; }
+    .section-heading {
+      align-items: baseline;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: space-between;
+    }
+    .duration-badge {
+      background: #d1fae5;
+      border: 1px solid #a7f3d0;
+      border-radius: 999px;
+      color: #065f46;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 3px 9px;
+      white-space: nowrap;
+    }
+    .timing-summary {
+      background: #fff;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      margin: 24px 0 32px;
+      padding: 16px;
+    }
+    .timing-heading {
+      align-items: center;
+      display: flex;
+      gap: 16px;
+      justify-content: space-between;
+    }
+    .timing-heading h2 {
+      border: 0;
+      margin: 0;
+      padding: 0;
+    }
+    .timing-total {
+      text-align: right;
+    }
+    .timing-total strong {
+      color: #065f46;
+      display: block;
+      font-size: 1.35rem;
+    }
+    .timing-total span,
+    .timing-note,
+    .raw-seconds {
+      color: #6b7280;
+      font-size: 12px;
+    }
+    .timing-table-wrap {
+      margin-top: 14px;
+      overflow-x: auto;
+    }
+    .timing-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    .timing-table th,
+    .timing-table td {
+      border-top: 1px solid #e5e7eb;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .timing-table th {
+      color: #4b5563;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    .timing-table td:last-child,
+    .timing-table th:last-child {
+      text-align: right;
+      white-space: nowrap;
+    }
+    .raw-seconds {
+      display: block;
+    }
+    .timing-note {
+      margin: 10px 0 0;
+    }
     .image-note { color: #555; font-size: 13px; margin: 8px 0 0; }
     .system-report {
       margin-bottom: 48px;
@@ -999,6 +1200,11 @@ write_pages_site() {
   local preview_name_safe
   local preview_b64
   local preview_count
+  local sections
+  local timing_stats
+  local timing_count
+  local timing_total
+  local timing_label
   local original_output="$OUTPUT"
   local original_roots=("${SYSTEM_ROOTS[@]}")
 
@@ -1059,6 +1265,16 @@ write_pages_site() {
       min-height: 120px;
       padding: 0.75rem 0;
     }
+    .report-info {
+      display: flex;
+      flex: 0 0 auto;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .report-timing {
+      color: #4b5563;
+      font-size: 0.9rem;
+    }
     a {
       color: #0f766e;
       font-size: 1.1rem;
@@ -1115,8 +1331,22 @@ HTML_INDEX_HEAD
     system_name="${system_name//[^A-Za-z0-9._-]/_}"
     system_label="$(printf '%s' "$system_name" | html_escape)"
 
-    printf '      <li class="report-row"><a href="reports/report_%s.html">%s</a><div class="volume-previews">' \
-      "$system_name" "$system_label" >> "$output_dir/index.html"
+    ROOT="$system_root"
+    sections=()
+    while IFS= read -r section; do
+      sections+=("$section")
+    done < <(log_sections_for_root | sort_sections)
+    timing_stats=$(timing_stats_for_sections "${sections[@]}")
+    timing_count=${timing_stats%%|*}
+    timing_total=${timing_stats#*|}
+    if [[ $timing_count -gt 0 ]]; then
+      timing_label="$(format_duration "$timing_total") total · $(format_timed_step_count "$timing_count")"
+    else
+      timing_label="No execution times recorded"
+    fi
+
+    printf '      <li class="report-row"><div class="report-info"><a href="reports/report_%s.html">%s</a><span class="report-timing">%s</span></div><div class="volume-previews">' \
+      "$system_name" "$system_label" "$(printf '%s' "$timing_label" | html_escape)" >> "$output_dir/index.html"
 
     preview_count=0
     while IFS= read -r preview; do
