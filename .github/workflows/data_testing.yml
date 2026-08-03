@@ -34,8 +34,8 @@ jobs:
           for system in $SIMPLE_SYSTEMS; do
             bash "./${system}.sh"
           done
-          simple_test_exec test=simulated_workflow system=6vxx 
-          simple_test_exec test=simulated_workflow system=1jxy 
+          simple_test_exec test=simulated_workflow system=6vxx > ./test_simulated_workflow_6vxx/LOG
+          simple_test_exec test=simulated_workflow system=1jxy > ./test_simulated_workflow_1jxy/LOG
 
       - name: Prepare report for Pages
         run: |
