@@ -12,8 +12,7 @@ Usage: ~/run_simple_tests.sh [options] [-- extra-test-arguments...]
 
 Options:
   --exe PATH          simple_test_exec to run
-                      (default: $SIMPLE_TEST_EXEC, build/production, PATH,
-                      or build/bin)
+                      (default: $SIMPLE_PATH/bin/simple_test_exec)
   --output-dir DIR    Directory for logs and per-test working directories
                       (default: simple-test-results/<timestamp>-<pid>)
   --timeout SECONDS   Per-test timeout; 0 disables it (default: 300)
@@ -42,10 +41,7 @@ die() {
     exit 2
 }
 
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-simple_source_dir=${SIMPLE_SOURCE_DIR:-"${script_dir}/programming/SIMPLE"}
-
-test_exe=${SIMPLE_TEST_EXEC:-}
+test_exe=
 output_dir=
 timeout_seconds=300
 match_regex='.*'
@@ -117,18 +113,10 @@ case "$timeout_seconds" in
         ;;
 esac
 
+[[ -n "${SIMPLE_PATH:-}" ]] || die "SIMPLE_PATH is not set"
+
 if [[ -z "$test_exe" ]]; then
-    if [[ -x "${simple_source_dir}/build/production/simple_test_exec" ]]; then
-        test_exe="${simple_source_dir}/build/production/simple_test_exec"
-    elif [[ -x "${simple_source_dir}/build/bin/simple_test_exec" ]]; then
-        test_exe="${simple_source_dir}/build/bin/simple_test_exec"
-    elif [[ -n "${SIMPLE_PATH:-}" && -x "${SIMPLE_PATH}/bin/simple_test_exec" ]]; then
-        test_exe="${SIMPLE_PATH}/bin/simple_test_exec"
-    elif command -v simple_test_exec >/dev/null 2>&1; then
-        test_exe=$(command -v simple_test_exec)
-    else
-        die "simple_test_exec was not found; use --exe PATH, set SIMPLE_TEST_EXEC, or set SIMPLE_SOURCE_DIR"
-    fi
+    test_exe="${SIMPLE_PATH}/bin/simple_test_exec"
 elif [[ "$test_exe" != */* ]]; then
     resolved_exe=$(command -v "$test_exe" 2>/dev/null) ||
         die "executable not found in PATH: $test_exe"
@@ -138,20 +126,13 @@ fi
 [[ -x "$test_exe" ]] || die "not an executable file: $test_exe"
 test_exe=$(cd "$(dirname "$test_exe")" && pwd)/$(basename "$test_exe")
 test_bin_dir=$(dirname "$test_exe")
-PATH="${test_bin_dir}:${PATH}"
+PATH="${SIMPLE_PATH}/bin:${test_bin_dir}:${PATH}"
 export PATH
-if [[ -z "${SIMPLE_PATH:-}" ]]; then
-    simple_path_candidate=$(dirname "$test_bin_dir")
-    if [[ -d "${simple_path_candidate}/bin" ]]; then
-        SIMPLE_PATH=$simple_path_candidate
-        export SIMPLE_PATH
-    fi
-fi
 if [[ -z "${SIMPLE_QSYS:-}" ]]; then
     SIMPLE_QSYS=local
     export SIMPLE_QSYS
 fi
-simple_exe="${test_bin_dir}/simple_exec"
+simple_exe="${SIMPLE_PATH}/bin/simple_exec"
 if ((generate_fixtures)) && [[ ! -x "$simple_exe" ]]; then
     die "fixture generation requires simple_exec next to simple_test_exec: $simple_exe"
 fi
@@ -306,6 +287,18 @@ prepare_test_fixtures() {
                 fixture_particle.mrc fixture_particle.mrc \
                 >fixture_particles.txt
             ;;
+        pcg_frac_update)
+            generate_noise_volume fixture_volume.mrc 32 1.5
+            "$simple_exe" prg=simulate_particles vol1=fixture_volume.mrc \
+                smpd=1.5 nptcls=12 snr=0.1 ctf=yes pgrp=c1 \
+                mskdiam=30 nthr=1 outstk=fixture_particles.mrcs \
+                outfile=fixture_oris.txt even=yes
+            "$simple_exe" prg=new_project projname=pcg_fixture
+            "$simple_exe" prg=import_particles \
+                projfile=pcg_fixture/pcg_fixture.simple \
+                stk=fixture_particles.mrcs oritab=fixture_oris.txt \
+                smpd=1.5 kv=300 cs=2.7 fraca=0.1 ctf=yes mkdir=no
+            ;;
     esac
 }
 
@@ -340,6 +333,10 @@ set_test_specific_args() {
             ;;
         atoms_stats|detect_atoms|simulate_nanoparticle|single_workflow)
             test_specific_args=(smpd=0.5 element=Au)
+            ;;
+        pcg_frac_update)
+            test_specific_args=(projfile=pcg_fixture/pcg_fixture.simple \
+                pgrp=c1 mskdiam=30 nthr=1 objfun=cc ml_reg=no)
             ;;
     esac
 }
