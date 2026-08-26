@@ -240,6 +240,22 @@ generate_noise_volume() {
     rm -f noisevol_state01_even.mrc noisevol_state01_odd.mrc
 }
 
+generate_rec3d_backends_fixture() {
+    generate_noise_volume rec3d_truth.mrc 32 1.0
+    "$simple_exe" prg=simulate_particles vol1=rec3d_truth.mrc \
+        smpd=1.0 nptcls=128 snr=1000000 pgrp=c1 mskdiam=24 nthr=1 \
+        ctf=no even=yes mkdir=no outstk=rec3d_particles.mrc \
+        outfile=rec3d_oris.txt
+    "$simple_exe" prg=new_project projname=rec3d_fixture qsys_name=local
+    (
+        cd rec3d_fixture || exit 2
+        "$simple_exe" prg=import_particles \
+            projfile=rec3d_fixture.simple stk=../rec3d_particles.mrc \
+            oritab=../rec3d_oris.txt smpd=1.0 kv=300 cs=2.7 fraca=0.1 \
+            ctf=no mkdir=no
+    )
+}
+
 prepare_test_fixtures() {
     test_name=$1
     case "$test_name" in
@@ -280,6 +296,9 @@ prepare_test_fixtures() {
             mv noisevol_state01.mrc recvol_state01.mrc
             mv noisevol_state01_even.mrc recvol_state01_even.mrc
             mv noisevol_state01_odd.mrc recvol_state01_odd.mrc
+            ;;
+        rec3D_backends)
+            generate_rec3d_backends_fixture
             ;;
         ptcls_ppca_subproject_distr)
             generate_noise_stack fixture_particle.mrc 64 1
@@ -330,6 +349,10 @@ set_test_specific_args() {
             ;;
         opt_lp)
             test_specific_args=(smpd=1.0 nthr=1 stk=fixture_particles.mrcs mskdiam=160)
+            ;;
+        rec3D_backends)
+            test_specific_args=(projfile=rec3d_fixture/rec3d_fixture.simple \
+                pgrp=c1 mskdiam=24 nthr=1 objfun=cc maxits_pcg=8 mkdir=no)
             ;;
         atoms_stats|detect_atoms|simulate_nanoparticle|single_workflow)
             test_specific_args=(smpd=0.5 element=Au)
