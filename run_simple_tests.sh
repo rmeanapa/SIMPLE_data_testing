@@ -352,7 +352,8 @@ set_test_specific_args() {
             ;;
         rec3D_backends)
             test_specific_args=(projfile=rec3d_fixture/rec3d_fixture.simple \
-                pgrp=c1 mskdiam=24 nthr=1 objfun=cc maxits_pcg=8 mkdir=no)
+                pgrp=c1 mskdiam=24 nthr=1 objfun=cc ml_reg=no \
+                maxits_pcg=8 mkdir=no)
             ;;
         atoms_stats|detect_atoms|simulate_nanoparticle|single_workflow)
             test_specific_args=(smpd=0.5 element=Au)
