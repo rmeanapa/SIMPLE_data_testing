@@ -53,4 +53,6 @@ jobs:
              export SIMPLE_QSYS="local"
              export SIMPLE_PATH=$GITHUB_WORKSPACE/build
              export PATH=${SIMPLE_PATH}/scripts:${SIMPLE_PATH}/bin:${PATH}
+             cd ..
+             bash "${GITHUB_WORKSPACE}/run_simple_tests.sh" --timeout 0
 
