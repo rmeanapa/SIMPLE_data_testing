@@ -19,7 +19,7 @@ Options:
   --match REGEX       Run only test names matching this extended regular expression
   --exclude REGEX     Skip test names matching this extended regular expression
                       (default: coarrays, openacc, mini_stream,
-                      simulated_workflow, and cavg_registration)
+                      and simulated_workflow)
   --no-fixtures       Do not generate synthetic inputs for data-dependent tests
   --list-only         Print the selected test names without running them
   -h, --help          Show this help
@@ -45,7 +45,7 @@ test_exe=
 output_dir=
 timeout_seconds=300
 match_regex='.*'
-exclude_regex='^(coarrays|openacc|mini_stream|simulated_workflow|cavg_registration)$'
+exclude_regex='^(coarrays|openacc|mini_stream|simulated_workflow)$'
 generate_fixtures=1
 list_only=0
 extra_args=()
