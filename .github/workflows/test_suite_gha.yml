@@ -48,10 +48,6 @@ jobs:
              
       - name: Build SIMPLE in debug mode (Linux/MacOS)
         run: |
-             # Start XQuartz in the background or set the display variable
-             echo "DISPLAY=:0" >> $GITHUB_ENV
-             # Optional: start XQuartz daemon if required by your tests
-             open -a XQuartz
              git clone https://github.com/hael/SIMPLE.git
              cd SIMPLE
              ./compile_clean.sh
