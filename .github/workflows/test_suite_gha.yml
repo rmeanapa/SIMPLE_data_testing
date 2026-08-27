@@ -43,6 +43,7 @@ jobs:
              brew install openblas 
              brew install lapack
              brew install arpack 
+             brew install gnuplot 
              
       - name: Build SIMPLE in debug mode (Linux/MacOS)
         run: |
