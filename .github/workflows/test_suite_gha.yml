@@ -3,7 +3,7 @@ name: Run SIMPLE Test Suite (Linux/MacOS)
 on:
   schedule:
     # Runs at 00:00 UTC every day (Nightly)
-    - cron: '0 0 * * *'
+    - cron: '41 0 * * *'
       timezone: 'America/New_York'
 
   # manually trigger for testing
