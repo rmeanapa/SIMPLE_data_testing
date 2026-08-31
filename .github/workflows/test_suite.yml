@@ -3,7 +3,7 @@ name: Run SIMPLE Test Suite
 on:
   push: {}
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 4 * * *'
       timezone: 'America/New_York'
   workflow_dispatch:
 

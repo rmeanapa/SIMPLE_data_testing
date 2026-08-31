@@ -3,8 +3,8 @@ name: Run & Display SIMPLE Data Sets
 on:
   #push: {}
   schedule:
-    - cron: '0 0 * * *'
-      timezone: 'America/New_York'
+    - cron: '42 4 * * *'
+      #timezone: 'America/New_York'
   workflow_dispatch:
 
 permissions:
