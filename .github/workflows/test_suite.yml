@@ -1,9 +1,9 @@
-name: Run SIMPLE Test Suite
+name: Run SIMPLE Test Suite (Oracle Linux)
 
 on:
   push: {}
   schedule:
-    - cron: '0 4 * * *'
+    - cron: '0 18 * * *'
       timezone: 'America/New_York'
   workflow_dispatch:
 

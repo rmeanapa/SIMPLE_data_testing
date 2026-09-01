@@ -3,8 +3,8 @@ name: Run & Display SIMPLE Data Sets
 on:
   #push: {}
   schedule:
-    - cron: '42 4 * * *'
-      #timezone: 'America/New_York'
+    - cron: '0 0 * * *'
+      timezone: 'America/New_York'
   workflow_dispatch:
 
 permissions:
@@ -41,7 +41,7 @@ jobs:
 
       - name: Prepare report for Pages
         run: |
-          ./make_report.sh $SIMPLE_SYSTEMS test_simulated_workflow_1jxy test_simulated_workflow_6vxx
+          ./make_report.sh $SIMPLE_SYSTEMS test_simulated_workflow_1jxy test_simulated_workflow_6vxx test_single_workflow
 
       - name: Upload downloadable artifact
         uses: actions/upload-artifact@v4
