@@ -3,8 +3,8 @@ name: Run SIMPLE Test Suite (Oracle Linux)
 on:
   push: {}
   schedule:
-    - cron: '0 18 * * *'
-      timezone: 'America/New_York'
+    - cron: '0 0 * * *'
+      #timezone: 'America/New_York'
   workflow_dispatch:
 
 permissions:
