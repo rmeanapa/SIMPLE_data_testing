@@ -1,7 +1,7 @@
 name: Run SIMPLE Test Suite (Oracle Linux)
 
 on:
-  push: {}
+  #push: {}
   schedule:
     - cron: '0 23 * * *'
       #timezone: 'America/New_York'
