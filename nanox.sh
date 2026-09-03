@@ -14,7 +14,7 @@ cd tracked_ptcl_1
 echo " >>> PROGRAM: trajectory_denoise" >> ../../LOG
 single_exec prg=trajectory_denoise stk=tracked_ptcl_1.mrc pca_mode=ppca smpd=0.358 nthr=40 >> ../../LOG
 echo " >>> PROGRAM: new_project" >> ../../LOG
-simple_exec prg=new_project projname=tracked_ptcl_1
+simple_exec prg=new_project projname=tracked_ptcl_1 >> ../../LOG
 cd tracked_ptcl_1
 echo " >>> PROGRAM: import_particles" >> ../../../LOG
 simple_exec prg=import_particles cs=-0.01 fraca=0.3 kv=300 smpd=0.358 stk=../ppca_denoised.mrcs ctf=no >> ../../../LOG
