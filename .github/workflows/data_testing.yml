@@ -33,7 +33,7 @@ jobs:
           echo $SIMPLE_PATH
           for system in $SIMPLE_SYSTEMS; do
             echo $system
-            bash "./${system}.sh"
+            bash -e "./${system}.sh"
           done
           echo "6VXX"
           simple_test_exec test=simulated_workflow system=6vxx > LOG_6vxx
