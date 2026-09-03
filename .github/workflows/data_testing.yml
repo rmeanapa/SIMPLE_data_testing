@@ -32,10 +32,14 @@ jobs:
           which simple_exec
           echo $SIMPLE_PATH
           for system in $SIMPLE_SYSTEMS; do
+            echo $system
             bash "./${system}.sh"
           done
+          echo "6VXX"
           simple_test_exec test=simulated_workflow system=6vxx > LOG_6vxx
+          echo "1jXY"
           simple_test_exec test=simulated_workflow system=1jxy > LOG_1jxy
+          echo "Single"
           simple_test_exec test=single_workflow smpd=0.358 element=Pt > LOG_single
 
       - name: Prepare report for Pages
