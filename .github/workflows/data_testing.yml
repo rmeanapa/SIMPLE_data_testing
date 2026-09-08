@@ -3,7 +3,7 @@ name: Run & Display SIMPLE Data Sets
 on:
   #push: {}
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 21 * * *'
   workflow_dispatch:
 
 permissions:
@@ -12,7 +12,7 @@ permissions:
   id-token: write
 
 env:
-  SIMPLE_SYSTEMS: betagal apof proteasome trpm4 motab 
+  SIMPLE_SYSTEMS: betagal apof clc motab proteasome trpm4 
 
 jobs:
   build_self_hosted:
