@@ -36,7 +36,7 @@ jobs:
             bash -e "./${system}.sh"
           done
           echo "6VXX"
-          simple_test_exec test=simulated_workflow system=6vxx > LOG_6vxx
+          simple_test_exec test=simulated_workflow picker=new system=6vxx > LOG_6vxx
           echo "1jXY"
           simple_test_exec test=simulated_workflow system=1jxy > LOG_1jxy
           echo "Single"
