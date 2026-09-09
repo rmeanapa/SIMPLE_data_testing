@@ -65,10 +65,34 @@ relative_to_root() {
   esac
 }
 
+log_file_for_root() {
+  local direct_log="$ROOT/LOG"
+  local root_name
+  local workflow_log
+
+  if [[ -f "$direct_log" ]]; then
+    printf '%s\n' "$direct_log"
+    return 0
+  fi
+
+  root_name=$(basename "$ROOT")
+  if [[ "$root_name" == test_simulated_workflow_* ]]; then
+    workflow_log="$(dirname "$ROOT")/LOG_${root_name#test_simulated_workflow_}"
+    if [[ -f "$workflow_log" ]]; then
+      printf '%s\n' "$workflow_log"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "$direct_log"
+}
+
 log_lookup_section() {
   local section="$1"
   local base
-  local log_file="$ROOT/LOG"
+  local log_file
+
+  log_file=$(log_file_for_root)
 
   if [[ "$section" == */* && -f "$log_file" ]]; then
     base=${section##*/}
@@ -84,6 +108,11 @@ log_lookup_section() {
 resolve_report_section() {
   local section="$1"
   local match=""
+
+  if [[ "$section" != */* && -d "$ROOT/simulated_workflow/$section" ]]; then
+    relative_to_root "$ROOT/simulated_workflow/$section"
+    return 0
+  fi
 
   if [[ "$section" != */* && -d "$ROOT/4_track_particles" ]]; then
     while IFS= read -r match; do
@@ -137,7 +166,9 @@ max_iter_for_dir() {
 
 log_program_for_section() {
   local section="$1"
-  local log_file="$ROOT/LOG"
+  local log_file
+
+  log_file=$(log_file_for_root)
 
   [[ -f "$log_file" ]] || return 1
   section=$(log_lookup_section "$section")
@@ -166,7 +197,9 @@ log_program_for_section() {
 
 log_block_for_section() {
   local section="$1"
-  local log_file="$ROOT/LOG"
+  local log_file
+
+  log_file=$(log_file_for_root)
 
   [[ -f "$log_file" ]] || return 1
   section=$(log_lookup_section "$section")
@@ -766,7 +799,9 @@ selected_jpgs_for_root() {
 }
 
 log_sections_for_root() {
-  local log_file="$ROOT/LOG"
+  local log_file
+
+  log_file=$(log_file_for_root)
 
   [[ -f "$log_file" ]] || return 0
 
