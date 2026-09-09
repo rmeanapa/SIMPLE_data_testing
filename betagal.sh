@@ -4,14 +4,14 @@ filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/betagal/movies >> LOG 2>&1
 echo " >>> PROGRAM: import_movies" >> LOG 2>&1
 simple_exec prg=import_movies cs=1.4 fraca=0.1 kv=200 smpd=0.885 filetab=movies.txt >> LOG 2>&1
 echo " >>> PROGRAM: motion_correct" >> LOG 2>&1
-simple_exec prg=motion_correct nparts=5 nthr=8 gainref=/mnt/beegfs/elmlund/testing-datasets/betagal/gain/gain.mrc total_dose=30.65 smpd_downscale=1.3 >> LOG 2>&1
+simple_exec prg=motion_correct nparts=24 nthr=1 gainref=/mnt/beegfs/elmlund/testing-datasets/betagal/gain/gain.mrc total_dose=30.65 smpd_downscale=1.3 >> LOG 2>&1
 echo " >>> PROGRAM: ctf_estimate" >> LOG 2>&1
-simple_exec prg=ctf_estimate nparts=5 nthr=8 projfile=2_motion_correct/betagal.simple >> LOG 2>&1
+simple_exec prg=ctf_estimate nparts=24 nthr=1 projfile=2_motion_correct/betagal.simple >> LOG 2>&1
 filetab_mrc.pl 2_motion_correct/ >> LOG 2>&1
 echo " >>> PROGRAM: pick" >> LOG 2>&1
-simple_exec prg=pick picker=segdiam projfile=3_ctf_estimate/betagal.simple nparts=5 nthr=8 >> LOG 2>&1
+simple_exec prg=pick picker=segdiam projfile=3_ctf_estimate/betagal.simple nparts=24 nthr=1 >> LOG 2>&1
 echo " >>> PROGRAM: extract" >> LOG 2>&1
-simple_exec prg=extract box=256 nparts=5 nthr=8 projfile=4_pick/betagal.simple >> LOG 2>&1
+simple_exec prg=extract box=256 nparts=24 nthr=1 projfile=4_pick/betagal.simple >> LOG 2>&1
 echo " >>> PROGRAM: abinitio2D" >> LOG 2>&1
 simple_exec prg=abinitio2D ncls=90 mskdiam=180 nthr=20 nparts=4 >> LOG 2>&1
 echo " >>> PROGRAM: model_cavgs_rejection" >> LOG 2>&1
