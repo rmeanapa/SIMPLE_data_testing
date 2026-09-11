@@ -358,6 +358,9 @@ set_test_specific_args() {
         atoms_stats|detect_atoms|simulate_nanoparticle|single_workflow)
             test_specific_args=(smpd=0.5 element=Au)
             ;;
+        detect_calpha_molecules)
+            test_specific_args=(nthr=1)
+            ;;
         pcg_frac_update)
             test_specific_args=(projfile=pcg_fixture/pcg_fixture.simple \
                 pgrp=c1 mskdiam=30 nthr=1 objfun=cc ml_reg=no)
