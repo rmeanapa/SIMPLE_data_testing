@@ -135,6 +135,50 @@ base64_one_line() {
   fi
 }
 
+index_volume_preview_for_root() {
+  local system_root="$1"
+  local candidate
+  local relative
+  local component
+  local component_lc
+  local priority
+  local rank
+  local best=""
+  local best_priority=-1
+  local best_rank=-1
+  local parts=()
+
+  while IFS= read -r candidate; do
+    relative=${candidate#"$system_root"/}
+    priority=1
+    rank=0
+    IFS='/' read -r -a parts <<< "$relative"
+    for component in "${parts[@]}"; do
+      component_lc=$(printf '%s' "$component" | tr '[:upper:]' '[:lower:]')
+      if [[ "$component_lc" == *autorefine3d* || "$component_lc" == *refine3d_auto* ]]; then
+        priority=3
+      elif [[ $priority -lt 3 && "$component_lc" == *abinitio3d* ]]; then
+        priority=2
+      fi
+      if [[ "$component" =~ ^([0-9]+)_ && $((10#${BASH_REMATCH[1]})) -gt $rank ]]; then
+        rank=$((10#${BASH_REMATCH[1]}))
+      fi
+    done
+
+    if [[ $priority -gt $best_priority || \
+          ( $priority -eq $best_priority && $rank -gt $best_rank ) || \
+          ( $priority -eq $best_priority && $rank -eq $best_rank && "$candidate" > "$best" ) ]]; then
+      best=$candidate
+      best_priority=$priority
+      best_rank=$rank
+    fi
+  done < <(find "$system_root" -type f -iname '*ortho*reproj*.jpg' ! -path '*/Trash/*' | sort)
+
+  if [[ -n "$best" ]]; then
+    printf '%s\n' "$best"
+  fi
+}
+
 max_iter_for_dir() {
   local dir="$1"
   local mode="$2"
@@ -1391,7 +1435,7 @@ HTML_INDEX_HEAD
       preview_b64="$(base64_one_line "$preview")"
       printf '<img src="data:image/jpeg;base64,%s" alt="%s %s">' \
         "$preview_b64" "$system_label" "$preview_name_safe" >> "$output_dir/index.html"
-    done < <(find "$system_root" -type f -iname '*ortho*reproj*.jpg' | sort)
+    done < <(index_volume_preview_for_root "$system_root")
 
     if [[ $preview_count -eq 0 ]]; then
       printf '<span class="no-preview">No volume preview</span>' >> "$output_dir/index.html"

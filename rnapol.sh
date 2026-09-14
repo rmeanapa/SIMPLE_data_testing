@@ -2,9 +2,9 @@ mkdir -p rnapol; cd rnapol
 simple_exec prg=new_project projname=rnapol dir=./ > LOG 2>&1
 filetab_movs.pl /mnt/beegfs/elmlund/testing-datasets/rnapol/movies >> LOG 2>&1
 echo " >>> PROGRAM: import_movies" >> LOG 2>&1
-simple_exec prg=import_movies cs=2.7 fraca=0.1 kv=300 smpd=0.885 filetab=movies.txt >> LOG 2>&1
+simple_exec prg=import_movies cs=2.7 fraca=0.1 kv=300 smpd=0.732 filetab=movies.txt >> LOG 2>&1
 echo " >>> PROGRAM: motion_correct" >> LOG 2>&1
-simple_exec prg=motion_correct nparts=5 nthr=8 gainref=/mnt/beegfs/elmlund/testing-datasets/rnapol/gain/gain.mrc total_dose=30.65 smpd_downscale=1.3 >> LOG 2>&1
+simple_exec prg=motion_correct nparts=5 nthr=8 gainref=/mnt/beegfs/elmlund/testing-datasets/rnapol/gain/gain.mrc total_dose=54 smpd_downscale=1.3 >> LOG 2>&1
 echo " >>> PROGRAM: ctf_estimate" >> LOG 2>&1
 simple_exec prg=ctf_estimate nparts=5 nthr=8 projfile=2_motion_correct/rnapol.simple >> LOG 2>&1
 filetab_mrc.pl 2_motion_correct/ >> LOG 2>&1
