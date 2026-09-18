@@ -275,6 +275,9 @@ prepare_test_fixtures() {
         mrc_validate)
             generate_noise_volume fixture_volume.mrc 64 1.3
             ;;
+        score_volume_shape)
+            generate_noise_volume fixture_volume.mrc 64 1.3
+            ;;
         stack_io)
             generate_noise_stack cavgs_iter030_ranked.mrc 256 4
             ;;
@@ -340,6 +343,9 @@ set_test_specific_args() {
             ;;
         mrc_validate)
             test_specific_args=(vol=fixture_volume.mrc smpd=1.3)
+            ;;
+        score_volume_shape)
+            test_specific_args=(vol1=fixture_volume.mrc smpd=1.3)
             ;;
         nano_mask)
             test_specific_args=(stk=selected.spi smpd=0.358 mskdiam=100)
