@@ -62,7 +62,7 @@ jobs:
         run: |
              git clone https://github.com/hael/SIMPLE.git
              cd SIMPLE
-             ./compile_clean.sh
+             ./compile_clean.sh --compile-tests
              export SIMPLE_EMAIL="my.name@uni.edu"
              export SIMPLE_QSYS="local"
              export SIMPLE_PATH=$GITHUB_WORKSPACE/SIMPLE/build
