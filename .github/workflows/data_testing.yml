@@ -12,7 +12,7 @@ permissions:
   id-token: write
 
 env:
-  SIMPLE_SYSTEMS: betagal apof clc motab proteasome trpm4 
+  SIMPLE_SYSTEMS: betagal apof clc motab proteasome trpm4 nanox
 
 jobs:
   build_self_hosted:
