@@ -40,7 +40,7 @@ jobs:
           echo "1jXY"
           simple_test_exec test=simulated_workflow suite=1jxy > LOG_1jxy
           echo "Single"
-          simple_test_exec test=single_workflow smpd=0.358 element=Pt > LOG_single
+          simple_test_exec test=single_workflow > LOG_single
 
       - name: Prepare report for Pages
         run: |
