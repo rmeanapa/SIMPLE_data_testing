@@ -19,6 +19,14 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT=""
 MOVIE_IMAGE_SAMPLE_LIMIT=10
 MOVIE_IMAGE_SAMPLE_THRESHOLD=100
+FINAL_RESOLUTION_THRESHOLD_ANGSTROM="${REPORT_FINAL_RESOLUTION_MAX_ANGSTROM:-10.0}"
+
+if ! awk -v value="$FINAL_RESOLUTION_THRESHOLD_ANGSTROM" 'BEGIN {
+  exit !(value ~ /^[0-9]+([.][0-9]+)?$/ && value > 0)
+}'; then
+  echo "REPORT_FINAL_RESOLUTION_MAX_ANGSTROM must be a positive number" >&2
+  exit 1
+fi
 
 SYSTEM_ROOTS=()
 for root_arg in "$@"; do
@@ -46,6 +54,19 @@ OUTPUT="${REPORT_OUTPUT:-$(pwd)/report_${report_name_part}.html}"
 
 html_escape() {
   sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+html_metric_value() {
+  local value="$1"
+  local suffix="${2:-}"
+  local escaped
+
+  if [[ -n "$value" ]]; then
+    escaped=$(printf '%s' "$value" | html_escape)
+    printf '<strong>%s%s</strong>' "$escaped" "$suffix"
+  else
+    printf '<strong class="metric-missing">not found</strong>'
+  fi
 }
 
 relative_to_root() {
@@ -380,6 +401,108 @@ timing_stats_for_sections() {
   done
 
   printf '%s|%s\n' "$count" "$total"
+}
+
+final_volume_metrics_for_root() {
+  local log_file
+
+  log_file=$(log_file_for_root)
+  [[ -f "$log_file" ]] || return 1
+
+  awk '
+    function reset_parameters() {
+      smpd = ""
+      box = ""
+      pgrp = ""
+      nptcls = ""
+    }
+
+    function numeric(value) {
+      return value ~ /^[-+]?[0-9]+([.][0-9]*)?([EeDd][-+]?[0-9]+)?$/
+    }
+
+    /^[[:space:]]*>>> PROGRAM[[:space:]]*:/ {
+      block++
+      program = $0
+      sub(/^[[:space:]]*>>> PROGRAM[[:space:]]*:[[:space:]]*/, "", program)
+      section = ""
+      reset_parameters()
+      next
+    }
+
+    /^[[:space:]]*>>> EXECUTION DIRECTORY[[:space:]]*:/ {
+      section = $0
+      sub(/^[[:space:]]*>>> EXECUTION DIRECTORY[[:space:]]*:[[:space:]]*/, "", section)
+      next
+    }
+
+    /^[[:space:]]*>>>[[:space:]]+[[:alnum:]_]+[[:space:]]+/ {
+      key = tolower($2)
+      if (key == "smpd") smpd = $3
+      else if (key == "box") box = $3
+      else if (key == "pgrp") pgrp = $3
+      else if (key == "nptcls") nptcls = $3
+    }
+
+    /RESOLUTION @ FSC=0[.]143[[:space:]]+AVG\/SDEV\/MIN\/MAX:/ {
+      values = $0
+      sub(/^.*AVG\/SDEV\/MIN\/MAX:[[:space:]]*/, "", values)
+      count = split(values, field, /[[:space:]]+/)
+      if (count >= 4 && numeric(field[1]) && numeric(field[2]) &&
+          numeric(field[3]) && numeric(field[4])) {
+        final_avg = field[1]
+        final_sdev = field[2]
+        final_min = field[3]
+        final_max = field[4]
+        final_program = program
+        final_section = section
+        final_smpd = smpd
+        final_box = box
+        final_pgrp = pgrp
+        final_nptcls = nptcls
+        metric_block = block
+        found = 1
+      }
+      next
+    }
+
+    /RESOLUTION AT FSC=0[.]143 DETERMINED TO:/ {
+      value = $0
+      sub(/^.*DETERMINED TO:[[:space:]]*/, "", value)
+      split(value, field, /[[:space:]]+/)
+      if (numeric(field[1])) {
+        final_avg = field[1]
+        final_sdev = ""
+        final_min = ""
+        final_max = ""
+        final_program = program
+        final_section = section
+        final_smpd = smpd
+        final_box = box
+        final_pgrp = pgrp
+        final_nptcls = nptcls
+        metric_block = block
+        found = 1
+      }
+      next
+    }
+
+    /NORMAL STOP/ {
+      normal_stop[block] = 1
+    }
+
+    /ERROR STOP/ {
+      error_stop[block] = 1
+    }
+
+    END {
+      if (!found) exit 1
+      normal = normal_stop[metric_block] && !error_stop[metric_block] ? 1 : 0
+      printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d\n", \
+        final_avg, final_sdev, final_min, final_max, final_program, \
+        final_section, final_smpd, final_box, final_pgrp, final_nptcls, normal
+    }
+  ' "$log_file"
 }
 
 append_timing_summary() {
@@ -1284,6 +1407,20 @@ write_pages_site() {
   local timing_count
   local timing_total
   local timing_label
+  local final_metrics
+  local final_resolution
+  local final_resolution_sdev
+  local final_resolution_min
+  local final_resolution_max
+  local final_program
+  local final_section
+  local final_smpd
+  local final_box
+  local final_pgrp
+  local final_nptcls
+  local final_normal_stop
+  local result_status
+  local result_class
   local original_output="$OUTPUT"
   local original_roots=("${SYSTEM_ROOTS[@]}")
 
@@ -1353,6 +1490,48 @@ write_pages_site() {
     .report-timing {
       color: #4b5563;
       font-size: 0.9rem;
+    }
+    .result-line {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.6rem;
+      margin-top: 0.35rem;
+    }
+    .result-badge {
+      border-radius: 999px;
+      display: inline-block;
+      font-size: 0.78rem;
+      font-weight: 750;
+      padding: 0.15rem 0.55rem;
+    }
+    .result-pass {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .result-fail {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .result-missing {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .final-metrics {
+      color: #374151;
+      display: flex;
+      flex-wrap: wrap;
+      font-size: 0.82rem;
+      gap: 0.2rem 0.75rem;
+      margin-top: 0.3rem;
+      max-width: 440px;
+    }
+    .final-metrics strong {
+      color: #111827;
+    }
+    .final-metrics .metric-missing {
+      color: #9a3412;
+      font-weight: 650;
     }
     a {
       color: #0f766e;
@@ -1424,8 +1603,83 @@ HTML_INDEX_HEAD
       timing_label="No execution times recorded"
     fi
 
-    printf '      <li class="report-row"><div class="report-info"><a href="reports/report_%s.html">%s</a><span class="report-timing">%s</span></div><div class="volume-previews">' \
+    final_metrics=$(final_volume_metrics_for_root || true)
+    final_resolution=""
+    final_resolution_sdev=""
+    final_resolution_min=""
+    final_resolution_max=""
+    final_program=""
+    final_section=""
+    final_smpd=""
+    final_box=""
+    final_pgrp=""
+    final_nptcls=""
+    final_normal_stop=0
+    if [[ -n "$final_metrics" ]]; then
+      IFS='|' read -r final_resolution final_resolution_sdev \
+        final_resolution_min final_resolution_max final_program final_section \
+        final_smpd final_box final_pgrp final_nptcls final_normal_stop <<< "$final_metrics"
+    fi
+
+    if [[ -z "$final_resolution" ]]; then
+      result_status="NOT EVALUATED"
+      result_class="result-missing"
+    elif [[ "$final_normal_stop" != 1 ]]; then
+      result_status="FAIL"
+      result_class="result-fail"
+    elif awk -v resolution="$final_resolution" \
+      -v limit="$FINAL_RESOLUTION_THRESHOLD_ANGSTROM" \
+      'BEGIN { exit !(resolution <= limit) }'; then
+      result_status="PASS"
+      result_class="result-pass"
+    else
+      result_status="FAIL"
+      result_class="result-fail"
+    fi
+
+    printf '      <li class="report-row"><div class="report-info"><a href="reports/report_%s.html">%s</a><span class="report-timing">%s</span>' \
       "$system_name" "$system_label" "$(printf '%s' "$timing_label" | html_escape)" >> "$output_dir/index.html"
+    printf '<div class="result-line"><span class="result-badge %s">%s</span>' \
+      "$result_class" "$result_status" >> "$output_dir/index.html"
+    if [[ -n "$final_resolution" ]]; then
+      printf '<span>Final resolution <strong>%s Å</strong> at FSC=0.143; required ≤ %s Å</span>' \
+        "$(printf '%s' "$final_resolution" | html_escape)" \
+        "$(printf '%s' "$FINAL_RESOLUTION_THRESHOLD_ANGSTROM" | html_escape)" >> "$output_dir/index.html"
+    else
+      printf '<span>No final FSC=0.143 resolution was found</span>' >> "$output_dir/index.html"
+    fi
+    printf '</div>' >> "$output_dir/index.html"
+
+    printf '<div class="final-metrics">' >> "$output_dir/index.html"
+    printf '<span>FSC criterion: <strong>0.143</strong></span>' >> "$output_dir/index.html"
+    printf '<span>Resolution limit: %s</span>' \
+      "$(html_metric_value "$FINAL_RESOLUTION_THRESHOLD_ANGSTROM" ' Å')" >> "$output_dir/index.html"
+    printf '<span>Resolution: %s</span>' \
+      "$(html_metric_value "$final_resolution" ' Å')" >> "$output_dir/index.html"
+    printf '<span>Resolution σ: %s</span>' \
+      "$(html_metric_value "$final_resolution_sdev" ' Å')" >> "$output_dir/index.html"
+    if [[ -n "$final_resolution_min" && -n "$final_resolution_max" ]]; then
+      printf '<span>Resolution range: <strong>%s–%s Å</strong></span>' \
+        "$(printf '%s' "$final_resolution_min" | html_escape)" \
+        "$(printf '%s' "$final_resolution_max" | html_escape)" >> "$output_dir/index.html"
+    else
+      printf '<span>Resolution range: %s</span>' \
+        "$(html_metric_value '')" >> "$output_dir/index.html"
+    fi
+    printf '<span>Program: %s</span>' \
+      "$(html_metric_value "$final_program")" >> "$output_dir/index.html"
+    printf '<span>Stage: %s</span>' \
+      "$(html_metric_value "$final_section")" >> "$output_dir/index.html"
+    printf '<span>Sampling: %s</span>' \
+      "$(html_metric_value "$final_smpd" ' Å/px')" >> "$output_dir/index.html"
+    printf '<span>Box: %s</span>' \
+      "$(html_metric_value "$final_box" ' px')" >> "$output_dir/index.html"
+    printf '<span>Symmetry: %s</span>' \
+      "$(html_metric_value "$final_pgrp")" >> "$output_dir/index.html"
+    printf '<span>Particles: %s</span>' \
+      "$(html_metric_value "$final_nptcls")" >> "$output_dir/index.html"
+    printf '</div>' >> "$output_dir/index.html"
+    printf '</div><div class="volume-previews">' >> "$output_dir/index.html"
 
     preview_count=0
     while IFS= read -r preview; do
