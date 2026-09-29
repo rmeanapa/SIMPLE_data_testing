@@ -37,9 +37,9 @@ jobs:
           done
           echo "6VXX"
           simple_test_exec test=simulated_workflow suite=6vxx > LOG_6vxx
-          echo "1jXY"
+          echo "1JXY"
           simple_test_exec test=simulated_workflow suite=1jxy > LOG_1jxy
-          echo "Single"
+          echo "single"
           simple_test_exec test=single_workflow > LOG_single
 
       - name: Prepare report for Pages
