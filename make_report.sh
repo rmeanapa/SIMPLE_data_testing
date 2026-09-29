@@ -200,6 +200,170 @@ index_volume_preview_for_root() {
   fi
 }
 
+final_volume_for_root() {
+  local system_root="$1"
+  local preview
+  local preview_dir
+  local candidate
+  local relative
+  local component
+  local component_lc
+  local priority
+  local rank
+  local best=""
+  local best_priority=-1
+  local best_rank=-1
+  local parts=()
+
+  preview=$(index_volume_preview_for_root "$system_root" || true)
+  if [[ -n "$preview" ]]; then
+    preview_dir=${preview%/*}
+    if [[ -f "$preview_dir/rec_final_state01.mrc" ]]; then
+      printf '%s\n' "$preview_dir/rec_final_state01.mrc"
+      return 0
+    fi
+  fi
+
+  while IFS= read -r candidate; do
+    relative=${candidate#"$system_root"/}
+    priority=1
+    rank=0
+    IFS='/' read -r -a parts <<< "$relative"
+    for component in "${parts[@]}"; do
+      component_lc=$(printf '%s' "$component" | tr '[:upper:]' '[:lower:]')
+      if [[ "$component_lc" == *autorefine3d* || "$component_lc" == *refine3d_auto* ]]; then
+        priority=3
+      elif [[ $priority -lt 3 && "$component_lc" == *abinitio3d* ]]; then
+        priority=2
+      fi
+      if [[ "$component" =~ ^([0-9]+)_ && $((10#${BASH_REMATCH[1]})) -gt $rank ]]; then
+        rank=$((10#${BASH_REMATCH[1]}))
+      fi
+    done
+
+    if [[ $priority -gt $best_priority || \
+          ( $priority -eq $best_priority && $rank -gt $best_rank ) || \
+          ( $priority -eq $best_priority && $rank -eq $best_rank && "$candidate" > "$best" ) ]]; then
+      best=$candidate
+      best_priority=$priority
+      best_rank=$rank
+    fi
+  done < <(find "$system_root" -type f -name 'rec_final_state01.mrc' ! -path '*/Trash/*' | sort)
+
+  [[ -z "$best" ]] || printf '%s\n' "$best"
+}
+
+volume_header_metrics() {
+  local volume="$1"
+  local info_exec=""
+  local info_output
+
+  if [[ -n "${SIMPLE_PATH:-}" && -x "$SIMPLE_PATH/bin/simple_exec" ]]; then
+    info_exec="$SIMPLE_PATH/bin/simple_exec"
+  elif command -v simple_exec >/dev/null 2>&1; then
+    info_exec=$(command -v simple_exec)
+  else
+    return 1
+  fi
+
+  info_output=$("$info_exec" prg=info_image fname="$volume" stats=no vis=no 2>&1) || return 1
+  printf '%s\n' "$info_output" | awk '
+    /Number of columns, rows, sections:/ {
+      value = $0
+      sub(/^.*Number of columns, rows, sections:[[:space:]]*/, "", value)
+      split(value, dims, /[[:space:]]+/)
+      box = dims[1]
+    }
+    /Pixel size[[:space:]]*:/ {
+      value = $0
+      sub(/^.*Pixel size[[:space:]]*:[[:space:]]*/, "", value)
+      split(value, fields, /[[:space:]]+/)
+      smpd = fields[1]
+    }
+    END {
+      if (box + 0 > 0 && smpd + 0 > 0) {
+        printf "%s|%s\n", box, smpd
+      } else {
+        exit 1
+      }
+    }
+  '
+}
+
+symmetry_for_root() {
+  local system_root="$1"
+  local system_name
+  local workflow_script
+  local symmetry=""
+
+  system_name=$(basename "$system_root")
+  workflow_script="$SCRIPT_DIR/$system_name.sh"
+  if [[ -f "$workflow_script" ]]; then
+    symmetry=$(awk '
+      /^[[:space:]]*#/ { next }
+      /prg=(abinitio3D|refine3D_auto|autorefine3D_nano)/ {
+        for (i = 1; i <= NF; i++) {
+          if ($i ~ /^pgrp=/) {
+            value = $i
+            sub(/^pgrp=/, "", value)
+            gsub(/["'\"']/, "", value)
+            pgrp = value
+          }
+        }
+      }
+      END {
+        if (pgrp != "") print pgrp
+      }
+    ' "$workflow_script")
+  fi
+
+  if [[ -z "$symmetry" ]]; then
+    case "$system_name" in
+      test_simulated_workflow_6vxx) symmetry="c3" ;;
+      test_simulated_workflow_1jxy|test_single_workflow) symmetry="c1" ;;
+    esac
+  fi
+
+  [[ -z "$symmetry" ]] || printf '%s\n' "$symmetry"
+}
+
+original_sampling_for_root() {
+  local system_root="$1"
+  local system_name
+  local workflow_script
+  local smpd=""
+
+  system_name=$(basename "$system_root")
+  workflow_script="$SCRIPT_DIR/$system_name.sh"
+  if [[ -f "$workflow_script" ]]; then
+    smpd=$(awk '
+      /^[[:space:]]*#/ { next }
+      /prg=(import_movies|tseries_import)/ {
+        for (i = 1; i <= NF; i++) {
+          if ($i ~ /^smpd=/) {
+            value = $i
+            sub(/^smpd=/, "", value)
+            import_smpd = value
+          }
+        }
+      }
+      END {
+        if (import_smpd != "") print import_smpd
+      }
+    ' "$workflow_script")
+  fi
+
+  if [[ -z "$smpd" ]]; then
+    case "$system_name" in
+      test_simulated_workflow_6vxx|test_simulated_workflow_1jxy|test_single_workflow)
+        smpd="1.3"
+        ;;
+    esac
+  fi
+
+  [[ -z "$smpd" ]] || printf '%s\n' "$smpd"
+}
+
 max_iter_for_dir() {
   local dir="$1"
   local mode="$2"
@@ -438,10 +602,38 @@ final_volume_metrics_for_root() {
 
     /^[[:space:]]*>>>[[:space:]]+[[:alnum:]_]+[[:space:]]+/ {
       key = tolower($2)
+      sub(/:$/, "", key)
       if (key == "smpd") smpd = $3
       else if (key == "box") box = $3
       else if (key == "pgrp") pgrp = $3
       else if (key == "nptcls") nptcls = $3
+    }
+
+    /(PROJECT VOLUME|CURRENT RUN|INPUT VOLUME) BOX\/SMPD:/ {
+      value = $0
+      sub(/^.*BOX\/SMPD:[[:space:]]*/, "", value)
+      gsub(/[[:space:]]/, "", value)
+      split(value, pair, "/")
+      if (numeric(pair[1]) && numeric(pair[2])) {
+        box = pair[1]
+        smpd = pair[2]
+      }
+    }
+
+    /POINT GROUP:/ {
+      value = $0
+      sub(/^.*POINT GROUP:[[:space:]]*/, "", value)
+      split(value, fields, /[[:space:]]+/)
+      if (fields[1] != "") pgrp = fields[1]
+    }
+
+    /% PARTICLES SAMPLED THIS ITERATION/ {
+      value = $0
+      sub(/^.*\(/, "", value)
+      sub(/\).*$/, "", value)
+      gsub(/[[:space:]]/, "", value)
+      split(value, pair, "/")
+      if (numeric(pair[2]) && pair[2] + 0 > 0) nptcls = pair[2]
     }
 
     /RESOLUTION @ FSC=0[.]143[[:space:]]+AVG\/SDEV\/MIN\/MAX:/ {
@@ -1419,6 +1611,12 @@ write_pages_site() {
   local final_pgrp
   local final_nptcls
   local final_normal_stop
+  local final_volume
+  local volume_metrics
+  local volume_box
+  local volume_smpd
+  local fallback_symmetry
+  local original_smpd
   local result_status
   local result_class
   local original_output="$OUTPUT"
@@ -1621,6 +1819,27 @@ HTML_INDEX_HEAD
         final_smpd final_box final_pgrp final_nptcls final_normal_stop <<< "$final_metrics"
     fi
 
+    if [[ -z "$final_box" || -z "$final_smpd" ]]; then
+      final_volume=$(final_volume_for_root "$system_root" || true)
+      if [[ -n "$final_volume" ]]; then
+        volume_metrics=$(volume_header_metrics "$final_volume" || true)
+        volume_box=""
+        volume_smpd=""
+        if [[ -n "$volume_metrics" ]]; then
+          IFS='|' read -r volume_box volume_smpd <<< "$volume_metrics"
+          [[ -n "$final_box" ]] || final_box="$volume_box"
+          [[ -n "$final_smpd" ]] || final_smpd="$volume_smpd"
+        fi
+      fi
+    fi
+
+    if [[ -z "$final_pgrp" ]]; then
+      fallback_symmetry=$(symmetry_for_root "$system_root" || true)
+      [[ -z "$fallback_symmetry" ]] || final_pgrp="$fallback_symmetry"
+    fi
+
+    original_smpd=$(original_sampling_for_root "$system_root" || true)
+
     if [[ -z "$final_resolution" ]]; then
       result_status="NOT EVALUATED"
       result_class="result-missing"
@@ -1670,13 +1889,15 @@ HTML_INDEX_HEAD
       "$(html_metric_value "$final_program")" >> "$output_dir/index.html"
     printf '<span>Stage: %s</span>' \
       "$(html_metric_value "$final_section")" >> "$output_dir/index.html"
-    printf '<span>Sampling: %s</span>' \
+    printf '<span>Movie import sampling: %s</span>' \
+      "$(html_metric_value "$original_smpd" ' Å/px')" >> "$output_dir/index.html"
+    printf '<span>Final map sampling: %s</span>' \
       "$(html_metric_value "$final_smpd" ' Å/px')" >> "$output_dir/index.html"
     printf '<span>Box: %s</span>' \
       "$(html_metric_value "$final_box" ' px')" >> "$output_dir/index.html"
     printf '<span>Symmetry: %s</span>' \
       "$(html_metric_value "$final_pgrp")" >> "$output_dir/index.html"
-    printf '<span>Particles: %s</span>' \
+    printf '<span>Final active particles: %s</span>' \
       "$(html_metric_value "$final_nptcls")" >> "$output_dir/index.html"
     printf '</div>' >> "$output_dir/index.html"
     printf '</div><div class="volume-previews">' >> "$output_dir/index.html"
