@@ -611,6 +611,11 @@ final_volume_metrics_for_root() {
       return value ~ /^[-+]?[0-9]+([.][0-9]*)?([EeDd][-+]?[0-9]+)?$/
     }
 
+    function trim(value) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      return value
+    }
+
     /^[[:space:]]*>>> PROGRAM[[:space:]]*:/ {
       block++
       program = $0
@@ -705,6 +710,81 @@ final_volume_metrics_for_root() {
       next
     }
 
+    /workflow_reconstruction docking correlation: direct=/ {
+      value = $0
+      sub(/^.*direct=[[:space:]]*/, "", value)
+      split(value, pair, /,[[:space:]]*mirrored=[[:space:]]*/)
+      dock_direct = pair[1]
+      dock_mirrored = pair[2]
+      if (numeric(dock_direct) && numeric(dock_mirrored)) {
+        if (dock_direct >= dock_mirrored) {
+          dock_selected = dock_direct
+          dock_hand = "direct"
+        } else {
+          dock_selected = dock_mirrored
+          dock_hand = "mirrored"
+        }
+      }
+      next
+    }
+
+    /Selected docking correlation:/ && /; band/ {
+      value = $0
+      sub(/^.*correlation:[[:space:]]*/, "", value)
+      split(value, fields, /;[[:space:]]*band[[:space:]]*/)
+      if (numeric(fields[1])) dock_selected = fields[1]
+      split(fields[2], band, /-/)
+      dock_hp = trim(band[1])
+      dock_lp = trim(band[2])
+      sub(/[[:space:]]+A.*$/, "", dock_lp)
+      next
+    }
+
+    /Registered whole-volume Pearson correlation:/ {
+      value = $0
+      sub(/^.*correlation:[[:space:]]*/, "", value)
+      split(value, fields, /;[[:space:]]*minimum[[:space:]]*/)
+      if (numeric(fields[1])) final_corr = fields[1]
+      if (numeric(fields[2])) final_corr_min = fields[2]
+      corr_basis = "whole volume"
+      next
+    }
+
+    /Registered soft-masked band correlation to/ {
+      value = $0
+      sub(/^.*correlation to[[:space:]]*/, "", value)
+      split(value, lp_fields, /[[:space:]]+A:[[:space:]]*/)
+      split(lp_fields[2], fields, /;[[:space:]]*minimum[[:space:]]*/)
+      if (numeric(fields[1])) final_corr = fields[1]
+      if (numeric(fields[2])) final_corr_min = fields[2]
+      corr_basis = "soft mask; low-pass " lp_fields[1] " A"
+      next
+    }
+
+    /Masked truth FSC: 0[.]500 at/ && /0[.]143 at/ {
+      value = $0
+      sub(/^.*0[.]500 at[[:space:]]*/, "", value)
+      split(value, fsc_fields, /[[:space:]]+A;[[:space:]]*0[.]143 at[[:space:]]*/)
+      split(fsc_fields[2], limit_fields, /[[:space:]]+A;[[:space:]]*maximum[[:space:]]*/)
+      final_fsc05 = fsc_fields[1]
+      final_avg = limit_fields[1]
+      final_fsc0143_max = limit_fields[2]
+      sub(/[[:space:]]+A.*$/, "", final_fsc0143_max)
+      if (numeric(final_fsc05) && numeric(final_avg)) {
+        final_sdev = ""
+        final_min = ""
+        final_max = ""
+        final_section = "final-volume validation"
+        final_smpd = smpd
+        final_box = box
+        final_pgrp = pgrp
+        final_nptcls = nptcls
+        metric_block = block
+        found = 1
+      }
+      next
+    }
+
     /PASS: single_workflow whole-volume correlation=/ && /FSC=0[.]143 at/ {
       value = $0
       sub(/^.*FSC=0[.]143 at[[:space:]]*/, "", value)
@@ -737,9 +817,11 @@ final_volume_metrics_for_root() {
     END {
       if (!found) exit 1
       normal = normal_stop[metric_block] && !error_stop[metric_block] ? 1 : 0
-      printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d\n", \
+      printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d\n", \
         final_avg, final_sdev, final_min, final_max, final_program, \
-        final_section, final_smpd, final_box, final_pgrp, final_nptcls, normal
+        final_section, final_smpd, final_box, final_pgrp, final_nptcls, \
+        final_corr, final_corr_min, corr_basis, dock_direct, dock_mirrored, \
+        dock_selected, dock_hand, dock_hp, dock_lp, normal
     }
   ' "$log_file"
 }
@@ -1865,11 +1947,23 @@ HTML_INDEX_HEAD
     final_box=""
     final_pgrp=""
     final_nptcls=""
+    final_corr=""
+    final_corr_min=""
+    final_corr_basis=""
+    final_dock_direct=""
+    final_dock_mirrored=""
+    final_dock_selected=""
+    final_dock_hand=""
+    final_dock_hp=""
+    final_dock_lp=""
     final_normal_stop=0
     if [[ -n "$final_metrics" ]]; then
       IFS='|' read -r final_resolution final_resolution_sdev \
         final_resolution_min final_resolution_max final_program final_section \
-        final_smpd final_box final_pgrp final_nptcls final_normal_stop <<< "$final_metrics"
+        final_smpd final_box final_pgrp final_nptcls final_corr \
+        final_corr_min final_corr_basis final_dock_direct final_dock_mirrored \
+        final_dock_selected final_dock_hand final_dock_hp final_dock_lp \
+        final_normal_stop <<< "$final_metrics"
     fi
 
     if [[ -z "$final_box" || -z "$final_smpd" ]]; then
@@ -1928,6 +2022,26 @@ HTML_INDEX_HEAD
       "$(html_metric_value "$resolution_threshold" ' Å')" >> "$output_dir/index.html"
     printf '<span>Resolution: %s</span>' \
       "$(html_metric_value "$final_resolution" ' Å')" >> "$output_dir/index.html"
+    printf '<span>Map correlation: %s</span>' \
+      "$(html_metric_value "$final_corr")" >> "$output_dir/index.html"
+    printf '<span>Correlation minimum: %s</span>' \
+      "$(html_metric_value "$final_corr_min")" >> "$output_dir/index.html"
+    printf '<span>Correlation basis: %s</span>' \
+      "$(html_metric_value "$final_corr_basis")" >> "$output_dir/index.html"
+    printf '<span>Selected docking correlation: %s (%s)</span>' \
+      "$(html_metric_value "$final_dock_selected")" \
+      "$(printf '%s' "${final_dock_hand:-not found}" | html_escape)" >> "$output_dir/index.html"
+    printf '<span>Docking correlation, direct: %s</span>' \
+      "$(html_metric_value "$final_dock_direct")" >> "$output_dir/index.html"
+    printf '<span>Docking correlation, mirrored: %s</span>' \
+      "$(html_metric_value "$final_dock_mirrored")" >> "$output_dir/index.html"
+    if [[ -n "$final_dock_hp" && -n "$final_dock_lp" ]]; then
+      printf '<span>Docking band: <strong>%s–%s Å</strong></span>' \
+        "$(printf '%s' "$final_dock_hp" | html_escape)" \
+        "$(printf '%s' "$final_dock_lp" | html_escape)" >> "$output_dir/index.html"
+    else
+      printf '<span>Docking band: %s</span>' "$(html_metric_value '')" >> "$output_dir/index.html"
+    fi
     printf '<span>Resolution σ: %s</span>' \
       "$(html_metric_value "$final_resolution_sdev" ' Å')" >> "$output_dir/index.html"
     if [[ -n "$final_resolution_min" && -n "$final_resolution_max" ]]; then
