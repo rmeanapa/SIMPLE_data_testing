@@ -21,11 +21,19 @@ ROOT=""
 MOVIE_IMAGE_SAMPLE_LIMIT=10
 MOVIE_IMAGE_SAMPLE_THRESHOLD=100
 FINAL_RESOLUTION_THRESHOLD_ANGSTROM="${REPORT_FINAL_RESOLUTION_MAX_ANGSTROM:-10.0}"
+SINGLE_WORKFLOW_RESOLUTION_THRESHOLD_ANGSTROM="${REPORT_SINGLE_WORKFLOW_RESOLUTION_MAX_ANGSTROM:-5.0}"
 
 if ! awk -v value="$FINAL_RESOLUTION_THRESHOLD_ANGSTROM" 'BEGIN {
   exit !(value ~ /^[0-9]+([.][0-9]+)?$/ && value > 0)
 }'; then
   echo "REPORT_FINAL_RESOLUTION_MAX_ANGSTROM must be a positive number" >&2
+  exit 1
+fi
+
+if ! awk -v value="$SINGLE_WORKFLOW_RESOLUTION_THRESHOLD_ANGSTROM" 'BEGIN {
+  exit !(value ~ /^[0-9]+([.][0-9]+)?$/ && value > 0)
+}'; then
+  echo "REPORT_SINGLE_WORKFLOW_RESOLUTION_MAX_ANGSTROM must be a positive number" >&2
   exit 1
 fi
 
@@ -98,12 +106,18 @@ log_file_for_root() {
   fi
 
   root_name=$(basename "$ROOT")
-  if [[ "$root_name" == test_simulated_workflow_* ]]; then
-    workflow_log="$(dirname "$ROOT")/LOG_${root_name#test_simulated_workflow_}"
-    if [[ -f "$workflow_log" ]]; then
-      printf '%s\n' "$workflow_log"
-      return 0
-    fi
+  case "$root_name" in
+    test_simulated_workflow_*)
+      workflow_log="$(dirname "$ROOT")/LOG_${root_name#test_simulated_workflow_}"
+      ;;
+    test_single_workflow)
+      workflow_log="$(dirname "$ROOT")/LOG_single"
+      ;;
+  esac
+
+  if [[ -n "${workflow_log:-}" && -f "$workflow_log" ]]; then
+    printf '%s\n' "$workflow_log"
+    return 0
   fi
 
   printf '%s\n' "$direct_log"
@@ -363,6 +377,17 @@ original_sampling_for_root() {
   fi
 
   [[ -z "$smpd" ]] || printf '%s\n' "$smpd"
+}
+
+resolution_threshold_for_root() {
+  local system_name
+
+  system_name=$(basename "$1")
+  if [[ "$system_name" == "test_single_workflow" ]]; then
+    printf '%s\n' "$SINGLE_WORKFLOW_RESOLUTION_THRESHOLD_ANGSTROM"
+  else
+    printf '%s\n' "$FINAL_RESOLUTION_THRESHOLD_ANGSTROM"
+  fi
 }
 
 max_iter_for_dir() {
@@ -670,6 +695,27 @@ final_volume_metrics_for_root() {
         final_max = ""
         final_program = program
         final_section = section
+        final_smpd = smpd
+        final_box = box
+        final_pgrp = pgrp
+        final_nptcls = nptcls
+        metric_block = block
+        found = 1
+      }
+      next
+    }
+
+    /PASS: single_workflow whole-volume correlation=/ && /FSC=0[.]143 at/ {
+      value = $0
+      sub(/^.*FSC=0[.]143 at[[:space:]]*/, "", value)
+      split(value, field, /[[:space:]]+/)
+      if (numeric(field[1])) {
+        final_avg = field[1]
+        final_sdev = ""
+        final_min = ""
+        final_max = ""
+        final_program = "single_workflow"
+        final_section = "final-volume validation"
         final_smpd = smpd
         final_box = box
         final_pgrp = pgrp
@@ -1606,6 +1652,7 @@ write_pages_site() {
   local final_resolution_sdev
   local final_resolution_min
   local final_resolution_max
+  local resolution_threshold
   local final_program
   local final_section
   local final_smpd
@@ -1793,6 +1840,7 @@ HTML_INDEX_HEAD
     system_label="$(printf '%s' "$system_name" | html_escape)"
 
     ROOT="$system_root"
+    resolution_threshold=$(resolution_threshold_for_root "$system_root")
     sections=()
     while IFS= read -r section; do
       sections+=("$section")
@@ -1852,7 +1900,7 @@ HTML_INDEX_HEAD
       result_status="FAIL"
       result_class="result-fail"
     elif awk -v resolution="$final_resolution" \
-      -v limit="$FINAL_RESOLUTION_THRESHOLD_ANGSTROM" \
+      -v limit="$resolution_threshold" \
       'BEGIN { exit !(resolution <= limit) }'; then
       result_status="PASS"
       result_class="result-pass"
@@ -1868,7 +1916,7 @@ HTML_INDEX_HEAD
     if [[ -n "$final_resolution" ]]; then
       printf '<span>Final resolution <strong>%s Å</strong> at FSC=0.143; required ≤ %s Å</span>' \
         "$(printf '%s' "$final_resolution" | html_escape)" \
-        "$(printf '%s' "$FINAL_RESOLUTION_THRESHOLD_ANGSTROM" | html_escape)" >> "$output_dir/index.html"
+        "$(printf '%s' "$resolution_threshold" | html_escape)" >> "$output_dir/index.html"
     else
       printf '<span>No final FSC=0.143 resolution was found</span>' >> "$output_dir/index.html"
     fi
@@ -1877,7 +1925,7 @@ HTML_INDEX_HEAD
     printf '<div class="final-metrics">' >> "$output_dir/index.html"
     printf '<span>FSC criterion: <strong>0.143</strong></span>' >> "$output_dir/index.html"
     printf '<span>Resolution limit: %s</span>' \
-      "$(html_metric_value "$FINAL_RESOLUTION_THRESHOLD_ANGSTROM" ' Å')" >> "$output_dir/index.html"
+      "$(html_metric_value "$resolution_threshold" ' Å')" >> "$output_dir/index.html"
     printf '<span>Resolution: %s</span>' \
       "$(html_metric_value "$final_resolution" ' Å')" >> "$output_dir/index.html"
     printf '<span>Resolution σ: %s</span>' \
