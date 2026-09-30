@@ -9,6 +9,7 @@
 set -euo pipefail
 
 PAGES_OUTPUT_DIR="${REPORT_SITE_DIR:-build}"
+SIMPLE_SOURCE_DIR="${SIMPLE_SOURCE_DIR:-/home/meanapanedar2/SIMPLE}"
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <system_dir> [system_dir ...]" >&2
@@ -1585,6 +1586,7 @@ write_pages_site() {
   local output_dir="$1"
   local reports_dir="$output_dir/reports"
   local generated_at
+  local simple_commit="unavailable"
   local system_root
   local system_name
   local system_label
@@ -1636,6 +1638,9 @@ write_pages_site() {
   SYSTEM_ROOTS=("${original_roots[@]}")
   OUTPUT="$original_output"
   generated_at="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+  if git -C "$SIMPLE_SOURCE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    simple_commit="$(git -C "$SIMPLE_SOURCE_DIR" rev-parse HEAD)"
+  fi
 
   cat > "$output_dir/index.html" <<HTML_INDEX_HEAD
 <!doctype html>
@@ -1778,7 +1783,7 @@ write_pages_site() {
 <body>
   <main>
     <h1>SIMPLE data testing reports</h1>
-    <p class="timestamp">Generated ${generated_at}</p>
+    <p class="timestamp">Generated ${generated_at} · SIMPLE commit <code>${simple_commit}</code></p>
     <ul>
 HTML_INDEX_HEAD
 
