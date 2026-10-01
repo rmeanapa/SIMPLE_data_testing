@@ -46,13 +46,13 @@ jobs:
           echo "1JXY"
           simple_test_exec test=simulated_workflow suite=1jxy > LOG_1jxy
           echo "SINGLE FCC Pt"
-          simple_test_exec test=single_workflow suite=pt > LOG_single_pt
+          simple_test_exec test=single_workflow suite=fcc > LOG_single_fcc
           echo "SINGLE wurtzite CdSe"
-          simple_test_exec test=single_workflow suite=cdsew > LOG_single_cdsew
+          simple_test_exec test=single_workflow suite=wurtzite > LOG_single_wurtzite
 
       - name: Prepare report for Pages
         run: |
-          ./make_report.sh $SIMPLE_SYSTEMS test_simulated_workflow_1jxy test_simulated_workflow_6vxx test_single_workflow_pt test_single_workflow_cdsew
+          ./make_report.sh $SIMPLE_SYSTEMS test_simulated_workflow_1jxy test_simulated_workflow_6vxx test_single_workflow_fcc test_single_workflow_wurtzite
 
       - name: Upload downloadable artifact
         uses: actions/upload-artifact@v4

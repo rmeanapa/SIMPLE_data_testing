@@ -67,10 +67,10 @@ html_escape() {
 
 display_name_for_root() {
   case "$(basename "$1")" in
-    test_single_workflow_pt)
+    test_single_workflow_fcc)
       printf '%s\n' 'SINGLE workflow — FCC Pt'
       ;;
-    test_single_workflow_cdsew)
+    test_single_workflow_wurtzite)
       printf '%s\n' 'SINGLE workflow — wurtzite CdSe'
       ;;
     *)
