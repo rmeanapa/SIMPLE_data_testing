@@ -361,8 +361,11 @@ set_test_specific_args() {
                 pgrp=c1 mskdiam=24 nthr=1 objfun=cc ml_reg=no \
                 maxits_pcg=8 mkdir=no)
             ;;
-        atoms_stats|detect_atoms|simulate_nanoparticle|single_workflow)
+        atoms_stats|detect_atoms|simulate_nanoparticle)
             test_specific_args=(smpd=0.5 element=Au)
+            ;;
+        single_workflow)
+            test_specific_args=(smpd=0.358)
             ;;
         detect_calpha_molecules)
             test_specific_args=(nthr=1)

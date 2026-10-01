@@ -65,6 +65,20 @@ html_escape() {
   sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
+display_name_for_root() {
+  case "$(basename "$1")" in
+    test_single_workflow_pt)
+      printf '%s\n' 'SINGLE workflow — FCC Pt'
+      ;;
+    test_single_workflow_cdsew)
+      printf '%s\n' 'SINGLE workflow — wurtzite CdSe'
+      ;;
+    *)
+      basename "$1"
+      ;;
+  esac
+}
+
 html_metric_value() {
   local value="$1"
   local suffix="${2:-}"
@@ -112,6 +126,9 @@ log_file_for_root() {
       ;;
     test_single_workflow)
       workflow_log="$(dirname "$ROOT")/LOG_single"
+      ;;
+    test_single_workflow_*)
+      workflow_log="$(dirname "$ROOT")/LOG_single_${root_name#test_single_workflow_}"
       ;;
   esac
 
@@ -335,7 +352,7 @@ symmetry_for_root() {
   if [[ -z "$symmetry" ]]; then
     case "$system_name" in
       test_simulated_workflow_6vxx) symmetry="c3" ;;
-      test_simulated_workflow_1jxy|test_single_workflow) symmetry="c1" ;;
+      test_simulated_workflow_1jxy|test_single_workflow|test_single_workflow_*) symmetry="c1" ;;
     esac
   fi
 
@@ -370,8 +387,11 @@ original_sampling_for_root() {
 
   if [[ -z "$smpd" ]]; then
     case "$system_name" in
-      test_simulated_workflow_6vxx|test_simulated_workflow_1jxy|test_single_workflow)
+      test_simulated_workflow_6vxx|test_simulated_workflow_1jxy)
         smpd="1.3"
+        ;;
+      test_single_workflow|test_single_workflow_*)
+        smpd="0.358"
         ;;
     esac
   fi
@@ -379,11 +399,22 @@ original_sampling_for_root() {
   [[ -z "$smpd" ]] || printf '%s\n' "$smpd"
 }
 
+input_sampling_label_for_root() {
+  case "$(basename "$1")" in
+    test_single_workflow|test_single_workflow_*)
+      printf '%s\n' 'Particle sampling'
+      ;;
+    *)
+      printf '%s\n' 'Movie import sampling'
+      ;;
+  esac
+}
+
 resolution_threshold_for_root() {
   local system_name
 
   system_name=$(basename "$1")
-  if [[ "$system_name" == "test_single_workflow" ]]; then
+  if [[ "$system_name" == "test_single_workflow" || "$system_name" == test_single_workflow_* ]]; then
     printf '%s\n' "$SINGLE_WORKFLOW_RESOLUTION_THRESHOLD_ANGSTROM"
   else
     printf '%s\n' "$FINAL_RESOLUTION_THRESHOLD_ANGSTROM"
@@ -785,7 +816,7 @@ final_volume_metrics_for_root() {
       next
     }
 
-    /PASS: single_workflow whole-volume correlation=/ && /FSC=0[.]143 at/ {
+    /PASS: single_workflow/ && /FSC=0[.]143 at/ {
       value = $0
       sub(/^.*FSC=0[.]143 at[[:space:]]*/, "", value)
       split(value, field, /[[:space:]]+/)
@@ -1365,6 +1396,7 @@ sample_images() {
 append_system_report() {
   local system_root="$1"
   local system_name
+  local system_label
   local jpg
   local dir
   local section
@@ -1387,6 +1419,7 @@ append_system_report() {
 
   ROOT="$system_root"
   system_name=$(basename "$ROOT")
+  system_label=$(display_name_for_root "$ROOT")
 
   while IFS= read -r jpg; do
     jpgs+=("$jpg")
@@ -1435,7 +1468,7 @@ append_system_report() {
 
   {
     printf '<section class="system-report">\n'
-    printf '<h1>SIMPLE Test Report - %s</h1>\n' "$(printf '%s' "$system_name" | html_escape)"
+    printf '<h1>SIMPLE Test Report - %s</h1>\n' "$(printf '%s' "$system_label" | html_escape)"
     printf '<p>SIMPLE test run</p>\n'
   } >> "$OUTPUT"
 
@@ -1748,6 +1781,7 @@ write_pages_site() {
   local volume_smpd
   local fallback_symmetry
   local original_smpd
+  local original_smpd_label
   local result_status
   local result_class
   local original_output="$OUTPUT"
@@ -1919,7 +1953,7 @@ HTML_INDEX_HEAD
   for system_root in "${original_roots[@]}"; do
     system_name="$(basename "$system_root")"
     system_name="${system_name//[^A-Za-z0-9._-]/_}"
-    system_label="$(printf '%s' "$system_name" | html_escape)"
+    system_label="$(display_name_for_root "$system_root" | html_escape)"
 
     ROOT="$system_root"
     resolution_threshold=$(resolution_threshold_for_root "$system_root")
@@ -1986,6 +2020,7 @@ HTML_INDEX_HEAD
     fi
 
     original_smpd=$(original_sampling_for_root "$system_root" || true)
+    original_smpd_label=$(input_sampling_label_for_root "$system_root")
 
     if [[ -z "$final_resolution" ]]; then
       result_status="NOT EVALUATED"
@@ -2056,7 +2091,8 @@ HTML_INDEX_HEAD
       "$(html_metric_value "$final_program")" >> "$output_dir/index.html"
     printf '<span>Stage: %s</span>' \
       "$(html_metric_value "$final_section")" >> "$output_dir/index.html"
-    printf '<span>Movie import sampling: %s</span>' \
+    printf '<span>%s: %s</span>' \
+      "$(printf '%s' "$original_smpd_label" | html_escape)" \
       "$(html_metric_value "$original_smpd" ' Å/px')" >> "$output_dir/index.html"
     printf '<span>Final map sampling: %s</span>' \
       "$(html_metric_value "$final_smpd" ' Å/px')" >> "$output_dir/index.html"
