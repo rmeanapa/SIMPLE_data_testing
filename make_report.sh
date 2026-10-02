@@ -20,7 +20,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT=""
 MOVIE_IMAGE_SAMPLE_LIMIT=10
 MOVIE_IMAGE_SAMPLE_THRESHOLD=100
-FINAL_RESOLUTION_THRESHOLD_ANGSTROM="${REPORT_FINAL_RESOLUTION_MAX_ANGSTROM:-10.0}"
+FINAL_RESOLUTION_THRESHOLD_ANGSTROM="${REPORT_FINAL_RESOLUTION_MAX_ANGSTROM:-6.0}"
 SINGLE_WORKFLOW_RESOLUTION_THRESHOLD_ANGSTROM="${REPORT_SINGLE_WORKFLOW_RESOLUTION_MAX_ANGSTROM:-5.0}"
 
 if ! awk -v value="$FINAL_RESOLUTION_THRESHOLD_ANGSTROM" 'BEGIN {
@@ -75,6 +75,17 @@ display_name_for_root() {
       ;;
     *)
       basename "$1"
+      ;;
+  esac
+}
+
+has_ground_truth_for_root() {
+  case "$(basename "$1")" in
+    test_simulated_workflow_*|test_single_workflow|test_single_workflow_*)
+      return 0
+      ;;
+    *)
+      return 1
       ;;
   esac
 }
@@ -702,12 +713,20 @@ final_volume_metrics_for_root() {
       values = $0
       sub(/^.*AVG\/SDEV\/MIN\/MAX:[[:space:]]*/, "", values)
       count = split(values, field, /[[:space:]]+/)
-      if (count >= 4 && numeric(field[1]) && numeric(field[2]) &&
-          numeric(field[3]) && numeric(field[4])) {
+      if (count >= 1 && numeric(field[1])) {
+        pending_fsc0143 = field[1]
+      }
+      next
+    }
+
+    /RESOLUTION @ FSC=0[.]5[[:space:]]+AVG\/SDEV\/MIN\/MAX:/ {
+      values = $0
+      sub(/^.*AVG\/SDEV\/MIN\/MAX:[[:space:]]*/, "", values)
+      count = split(values, field, /[[:space:]]+/)
+      if (count >= 1 && numeric(field[1])) {
         final_avg = field[1]
-        final_sdev = field[2]
-        final_min = field[3]
-        final_max = field[4]
+        final_fsc0143 = pending_fsc0143
+        pending_fsc0143 = ""
         final_program = program
         final_section = section
         final_smpd = smpd
@@ -720,15 +739,13 @@ final_volume_metrics_for_root() {
       next
     }
 
-    /RESOLUTION AT FSC=0[.]143 DETERMINED TO:/ {
+    /RESOLUTION AT FSC=0[.]500 DETERMINED TO:/ {
       value = $0
       sub(/^.*DETERMINED TO:[[:space:]]*/, "", value)
       split(value, field, /[[:space:]]+/)
       if (numeric(field[1])) {
         final_avg = field[1]
-        final_sdev = ""
-        final_min = ""
-        final_max = ""
+        final_fsc0143 = ""
         final_program = program
         final_section = section
         final_smpd = smpd
@@ -736,7 +753,19 @@ final_volume_metrics_for_root() {
         final_pgrp = pgrp
         final_nptcls = nptcls
         metric_block = block
+        awaiting_direct_fsc0143 = 1
         found = 1
+      }
+      next
+    }
+
+    /RESOLUTION AT FSC=0[.]143 DETERMINED TO:/ {
+      value = $0
+      sub(/^.*DETERMINED TO:[[:space:]]*/, "", value)
+      split(value, field, /[[:space:]]+/)
+      if (awaiting_direct_fsc0143 && block == metric_block && numeric(field[1])) {
+        final_fsc0143 = field[1]
+        awaiting_direct_fsc0143 = 0
       }
       next
     }
@@ -796,36 +825,10 @@ final_volume_metrics_for_root() {
       value = $0
       sub(/^.*0[.]500 at[[:space:]]*/, "", value)
       split(value, fsc_fields, /[[:space:]]+A;[[:space:]]*0[.]143 at[[:space:]]*/)
-      split(fsc_fields[2], limit_fields, /[[:space:]]+A;[[:space:]]*maximum[[:space:]]*/)
-      final_fsc05 = fsc_fields[1]
-      final_avg = limit_fields[1]
-      final_fsc0143_max = limit_fields[2]
-      sub(/[[:space:]]+A.*$/, "", final_fsc0143_max)
-      if (numeric(final_fsc05) && numeric(final_avg)) {
-        final_sdev = ""
-        final_min = ""
-        final_max = ""
-        final_section = "final-volume validation"
-        final_smpd = smpd
-        final_box = box
-        final_pgrp = pgrp
-        final_nptcls = nptcls
-        metric_block = block
-        found = 1
-      }
-      next
-    }
-
-    /PASS: single_workflow/ && /FSC=0[.]143 at/ {
-      value = $0
-      sub(/^.*FSC=0[.]143 at[[:space:]]*/, "", value)
-      split(value, field, /[[:space:]]+/)
-      if (numeric(field[1])) {
-        final_avg = field[1]
-        final_sdev = ""
-        final_min = ""
-        final_max = ""
-        final_program = "single_workflow"
+      split(fsc_fields[2], fsc0143_fields, /[[:space:]]+A;/)
+      final_avg = fsc_fields[1]
+      final_fsc0143 = fsc0143_fields[1]
+      if (numeric(final_avg) && numeric(final_fsc0143)) {
         final_section = "final-volume validation"
         final_smpd = smpd
         final_box = box
@@ -848,9 +851,9 @@ final_volume_metrics_for_root() {
     END {
       if (!found) exit 1
       normal = normal_stop[metric_block] && !error_stop[metric_block] ? 1 : 0
-      printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d\n", \
-        final_avg, final_sdev, final_min, final_max, final_program, \
-        final_section, final_smpd, final_box, final_pgrp, final_nptcls, \
+      printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d\n", \
+        final_avg, final_fsc0143, final_program, final_section, final_smpd, \
+        final_box, final_pgrp, final_nptcls, \
         final_corr, final_corr_min, corr_basis, dock_direct, dock_mirrored, \
         dock_selected, dock_hand, dock_hp, dock_lp, normal
     }
@@ -1112,10 +1115,16 @@ log_summary_for_section() {
       ;;
     abinitio3D)
       {
-        printf 'Recent FSC=0.143 resolution estimates:\n'
+        printf 'Recent FSC resolution estimates:\n'
         log_block_for_section "$section" | awk '
-          /RESOLUTION @ FSC=0.143/ {
-            lines[++n] = $0
+          /RESOLUTION @ FSC=0.143|RESOLUTION @ FSC=0.5/ {
+            criterion = $0 ~ /FSC=0.143/ ? "0.143" : "0.5"
+            value = $0
+            sub(/^.*AVG\/SDEV\/MIN\/MAX:[[:space:]]*/, "", value)
+            split(value, fields, /[[:space:]]+/)
+            if (fields[1] != "") {
+              lines[++n] = "FSC=" criterion " resolution: " fields[1] " A"
+            }
           }
           END {
             start = n > 20 ? n - 19 : 1
@@ -1764,9 +1773,7 @@ write_pages_site() {
   local timing_label
   local final_metrics
   local final_resolution
-  local final_resolution_sdev
-  local final_resolution_min
-  local final_resolution_max
+  local final_resolution_0143
   local resolution_threshold
   local final_program
   local final_section
@@ -1784,6 +1791,7 @@ write_pages_site() {
   local original_smpd_label
   local result_status
   local result_class
+  local has_ground_truth
   local original_output="$OUTPUT"
   local original_roots=("${SYSTEM_ROOTS[@]}")
 
@@ -1954,6 +1962,10 @@ HTML_INDEX_HEAD
     system_name="$(basename "$system_root")"
     system_name="${system_name//[^A-Za-z0-9._-]/_}"
     system_label="$(display_name_for_root "$system_root" | html_escape)"
+    has_ground_truth=0
+    if has_ground_truth_for_root "$system_root"; then
+      has_ground_truth=1
+    fi
 
     ROOT="$system_root"
     resolution_threshold=$(resolution_threshold_for_root "$system_root")
@@ -1972,9 +1984,7 @@ HTML_INDEX_HEAD
 
     final_metrics=$(final_volume_metrics_for_root || true)
     final_resolution=""
-    final_resolution_sdev=""
-    final_resolution_min=""
-    final_resolution_max=""
+    final_resolution_0143=""
     final_program=""
     final_section=""
     final_smpd=""
@@ -1992,8 +2002,7 @@ HTML_INDEX_HEAD
     final_dock_lp=""
     final_normal_stop=0
     if [[ -n "$final_metrics" ]]; then
-      IFS='|' read -r final_resolution final_resolution_sdev \
-        final_resolution_min final_resolution_max final_program final_section \
+      IFS='|' read -r final_resolution final_resolution_0143 final_program final_section \
         final_smpd final_box final_pgrp final_nptcls final_corr \
         final_corr_min final_corr_basis final_dock_direct final_dock_mirrored \
         final_dock_selected final_dock_hand final_dock_hp final_dock_lp \
@@ -2043,65 +2052,77 @@ HTML_INDEX_HEAD
     printf '<div class="result-line"><span class="result-badge %s">%s</span>' \
       "$result_class" "$result_status" >> "$output_dir/index.html"
     if [[ -n "$final_resolution" ]]; then
-      printf '<span>Final resolution <strong>%s Å</strong> at FSC=0.143; required ≤ %s Å</span>' \
+      printf '<span>Final resolution <strong>%s Å</strong> at FSC=0.5; required ≤ %s Å</span>' \
         "$(printf '%s' "$final_resolution" | html_escape)" \
         "$(printf '%s' "$resolution_threshold" | html_escape)" >> "$output_dir/index.html"
     else
-      printf '<span>No final FSC=0.143 resolution was found</span>' >> "$output_dir/index.html"
+      printf '<span>No final FSC=0.5 resolution was found</span>' >> "$output_dir/index.html"
     fi
     printf '</div>' >> "$output_dir/index.html"
 
     printf '<div class="final-metrics">' >> "$output_dir/index.html"
-    printf '<span>FSC criterion: <strong>0.143</strong></span>' >> "$output_dir/index.html"
+    printf '<span>FSC criterion: <strong>0.5</strong></span>' >> "$output_dir/index.html"
     printf '<span>Resolution limit: %s</span>' \
       "$(html_metric_value "$resolution_threshold" ' Å')" >> "$output_dir/index.html"
-    printf '<span>Resolution: %s</span>' \
-      "$(html_metric_value "$final_resolution" ' Å')" >> "$output_dir/index.html"
-    printf '<span>Map correlation: %s</span>' \
-      "$(html_metric_value "$final_corr")" >> "$output_dir/index.html"
-    printf '<span>Correlation minimum: %s</span>' \
-      "$(html_metric_value "$final_corr_min")" >> "$output_dir/index.html"
-    printf '<span>Correlation basis: %s</span>' \
-      "$(html_metric_value "$final_corr_basis")" >> "$output_dir/index.html"
-    printf '<span>Selected docking correlation: %s (%s)</span>' \
-      "$(html_metric_value "$final_dock_selected")" \
-      "$(printf '%s' "${final_dock_hand:-not found}" | html_escape)" >> "$output_dir/index.html"
-    printf '<span>Docking correlation, direct: %s</span>' \
-      "$(html_metric_value "$final_dock_direct")" >> "$output_dir/index.html"
-    printf '<span>Docking correlation, mirrored: %s</span>' \
-      "$(html_metric_value "$final_dock_mirrored")" >> "$output_dir/index.html"
-    if [[ -n "$final_dock_hp" && -n "$final_dock_lp" ]]; then
-      printf '<span>Docking band: <strong>%s–%s Å</strong></span>' \
-        "$(printf '%s' "$final_dock_hp" | html_escape)" \
-        "$(printf '%s' "$final_dock_lp" | html_escape)" >> "$output_dir/index.html"
-    else
-      printf '<span>Docking band: %s</span>' "$(html_metric_value '')" >> "$output_dir/index.html"
+    if [[ -n "$final_resolution" || $has_ground_truth -eq 1 ]]; then
+      printf '<span>FSC=0.5 resolution: %s</span>' \
+        "$(html_metric_value "$final_resolution" ' Å')" >> "$output_dir/index.html"
     fi
-    printf '<span>Resolution σ: %s</span>' \
-      "$(html_metric_value "$final_resolution_sdev" ' Å')" >> "$output_dir/index.html"
-    if [[ -n "$final_resolution_min" && -n "$final_resolution_max" ]]; then
-      printf '<span>Resolution range: <strong>%s–%s Å</strong></span>' \
-        "$(printf '%s' "$final_resolution_min" | html_escape)" \
-        "$(printf '%s' "$final_resolution_max" | html_escape)" >> "$output_dir/index.html"
-    else
-      printf '<span>Resolution range: %s</span>' \
-        "$(html_metric_value '')" >> "$output_dir/index.html"
+    if [[ -n "$final_resolution_0143" || $has_ground_truth -eq 1 ]]; then
+      printf '<span>FSC=0.143 resolution: %s</span>' \
+        "$(html_metric_value "$final_resolution_0143" ' Å')" >> "$output_dir/index.html"
     fi
-    printf '<span>Program: %s</span>' \
-      "$(html_metric_value "$final_program")" >> "$output_dir/index.html"
-    printf '<span>Stage: %s</span>' \
-      "$(html_metric_value "$final_section")" >> "$output_dir/index.html"
-    printf '<span>%s: %s</span>' \
-      "$(printf '%s' "$original_smpd_label" | html_escape)" \
-      "$(html_metric_value "$original_smpd" ' Å/px')" >> "$output_dir/index.html"
-    printf '<span>Final map sampling: %s</span>' \
-      "$(html_metric_value "$final_smpd" ' Å/px')" >> "$output_dir/index.html"
-    printf '<span>Box: %s</span>' \
-      "$(html_metric_value "$final_box" ' px')" >> "$output_dir/index.html"
-    printf '<span>Symmetry: %s</span>' \
-      "$(html_metric_value "$final_pgrp")" >> "$output_dir/index.html"
-    printf '<span>Final active particles: %s</span>' \
-      "$(html_metric_value "$final_nptcls")" >> "$output_dir/index.html"
+    if [[ $has_ground_truth -eq 1 ]]; then
+      printf '<span>Map correlation: %s</span>' \
+        "$(html_metric_value "$final_corr")" >> "$output_dir/index.html"
+      printf '<span>Correlation minimum: %s</span>' \
+        "$(html_metric_value "$final_corr_min")" >> "$output_dir/index.html"
+      printf '<span>Correlation basis: %s</span>' \
+        "$(html_metric_value "$final_corr_basis")" >> "$output_dir/index.html"
+      printf '<span>Selected docking correlation: %s (%s)</span>' \
+        "$(html_metric_value "$final_dock_selected")" \
+        "$(printf '%s' "${final_dock_hand:-not found}" | html_escape)" >> "$output_dir/index.html"
+      printf '<span>Docking correlation, direct: %s</span>' \
+        "$(html_metric_value "$final_dock_direct")" >> "$output_dir/index.html"
+      printf '<span>Docking correlation, mirrored: %s</span>' \
+        "$(html_metric_value "$final_dock_mirrored")" >> "$output_dir/index.html"
+      if [[ -n "$final_dock_hp" && -n "$final_dock_lp" ]]; then
+        printf '<span>Docking band: <strong>%s–%s Å</strong></span>' \
+          "$(printf '%s' "$final_dock_hp" | html_escape)" \
+          "$(printf '%s' "$final_dock_lp" | html_escape)" >> "$output_dir/index.html"
+      else
+        printf '<span>Docking band: %s</span>' "$(html_metric_value '')" >> "$output_dir/index.html"
+      fi
+    fi
+    if [[ -n "$final_program" || $has_ground_truth -eq 1 ]]; then
+      printf '<span>Program: %s</span>' \
+        "$(html_metric_value "$final_program")" >> "$output_dir/index.html"
+    fi
+    if [[ -n "$final_section" || $has_ground_truth -eq 1 ]]; then
+      printf '<span>Stage: %s</span>' \
+        "$(html_metric_value "$final_section")" >> "$output_dir/index.html"
+    fi
+    if [[ -n "$original_smpd" || $has_ground_truth -eq 1 ]]; then
+      printf '<span>%s: %s</span>' \
+        "$(printf '%s' "$original_smpd_label" | html_escape)" \
+        "$(html_metric_value "$original_smpd" ' Å/px')" >> "$output_dir/index.html"
+    fi
+    if [[ -n "$final_smpd" || $has_ground_truth -eq 1 ]]; then
+      printf '<span>Final map sampling: %s</span>' \
+        "$(html_metric_value "$final_smpd" ' Å/px')" >> "$output_dir/index.html"
+    fi
+    if [[ -n "$final_box" || $has_ground_truth -eq 1 ]]; then
+      printf '<span>Box: %s</span>' \
+        "$(html_metric_value "$final_box" ' px')" >> "$output_dir/index.html"
+    fi
+    if [[ -n "$final_pgrp" || $has_ground_truth -eq 1 ]]; then
+      printf '<span>Symmetry: %s</span>' \
+        "$(html_metric_value "$final_pgrp")" >> "$output_dir/index.html"
+    fi
+    if [[ -n "$final_nptcls" || $has_ground_truth -eq 1 ]]; then
+      printf '<span>Final active particles: %s</span>' \
+        "$(html_metric_value "$final_nptcls")" >> "$output_dir/index.html"
+    fi
     printf '</div>' >> "$output_dir/index.html"
     printf '</div><div class="volume-previews">' >> "$output_dir/index.html"
 
