@@ -1533,7 +1533,7 @@ append_system_report() {
         if [[ "$fname" == *cavgs*.jpg ]]; then
           card_class="card cavgs"
         fi
-        if [[ "$fname_lc" == *ortho* && "$fname_lc" == *reproj* && "$fname_lc" == *state01* ]]; then
+        if [[ "$fname_lc" == *reproj*.jpg ]]; then
           card_class="card reproj-fullscreen"
         fi
 
