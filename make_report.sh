@@ -221,7 +221,7 @@ index_volume_preview_for_root() {
       component_lc=$(printf '%s' "$component" | tr '[:upper:]' '[:lower:]')
       if [[ "$component_lc" == *autorefine3d* || "$component_lc" == *refine3d_auto* ]]; then
         priority=3
-      elif [[ $priority -lt 3 && "$component_lc" == *abinitio3d* ]]; then
+      elif [[ $priority -lt 3 && "$component_lc" == *solve3d* ]]; then
         priority=2
       fi
       if [[ "$component" =~ ^([0-9]+)_ && $((10#${BASH_REMATCH[1]})) -gt $rank ]]; then
@@ -276,7 +276,7 @@ final_volume_for_root() {
       component_lc=$(printf '%s' "$component" | tr '[:upper:]' '[:lower:]')
       if [[ "$component_lc" == *autorefine3d* || "$component_lc" == *refine3d_auto* ]]; then
         priority=3
-      elif [[ $priority -lt 3 && "$component_lc" == *abinitio3d* ]]; then
+      elif [[ $priority -lt 3 && "$component_lc" == *solve3d* ]]; then
         priority=2
       fi
       if [[ "$component" =~ ^([0-9]+)_ && $((10#${BASH_REMATCH[1]})) -gt $rank ]]; then
@@ -344,7 +344,7 @@ symmetry_for_root() {
   if [[ -f "$workflow_script" ]]; then
     symmetry=$(awk '
       /^[[:space:]]*#/ { next }
-      /prg=(abinitio3D|refine3D_auto|autorefine3D_nano)/ {
+      /prg=(solve3D|refine3D_auto|autorefine3D_nano)/ {
         for (i = 1; i <= NF; i++) {
           if ($i ~ /^pgrp=/) {
             value = $i
@@ -1082,7 +1082,7 @@ log_summary_for_section() {
         }
       '
       ;;
-    abinitio2D)
+    solve2D)
       {
         printf 'Final class ranking and status:\n'
         log_block_for_section "$section" | awk '
@@ -1113,7 +1113,7 @@ log_summary_for_section() {
         '
       }
       ;;
-    abinitio3D)
+    solve3D)
       {
         printf 'Recent FSC resolution estimates:\n'
         log_block_for_section "$section" | awk '

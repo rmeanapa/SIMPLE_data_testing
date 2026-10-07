@@ -16,14 +16,14 @@ simple_exec prg=pick picker=segdiam nparts=5 nthr=8 projfile=3_ctf_estimate/apof
 echo " >>> PROGRAM: extract" >> LOG 2>&1
 simple_exec prg=extract box=192 projfile=4_pick/apof.simple nparts=8 nthr=8 >> LOG 2>&1
 wc 4_pick/*box >> LOG 2>&1
-echo " >>> PROGRAM: abinitio2D" >> LOG 2>&1
-simple_exec prg=abinitio2D ncls=90 mskdiam=180 nthr=20 nparts=4 >> LOG 2>&1
+echo " >>> PROGRAM: solve2D" >> LOG 2>&1
+simple_exec prg=solve2D ncls=90 mskdiam=180 nthr=20 nparts=4 >> LOG 2>&1
 echo " >>> PROGRAM: model_cavgs_rejection" >> LOG 2>&1
 simple_exec prg=model_cavgs_rejection mskdiam=180 nthr=20 >> LOG 2>&1
-echo " >>> PROGRAM: abinitio3D_cavgs" >> LOG 2>&1
-simple_exec prg=abinitio3D_cavgs pgrp=o mskdiam=180 nthr=40 >> LOG 2>&1
-echo " >>> PROGRAM: abinitio3D" >> LOG 2>&1
-simple_exec prg=abinitio3D pgrp=o mskdiam=180 nthr=8 nparts=10 cavg_ini_ext=yes >> LOG 2>&1
+echo " >>> PROGRAM: solve3D_cavgs" >> LOG 2>&1
+simple_exec prg=solve3D_cavgs pgrp=o mskdiam=180 nthr=40 >> LOG 2>&1
+echo " >>> PROGRAM: solve3D" >> LOG 2>&1
+simple_exec prg=solve3D pgrp=o mskdiam=180 nthr=8 nparts=10 cavg_ini_ext=yes >> LOG 2>&1
 echo " >>> PROGRAM: refine3D_auto" >> LOG 2>&1
 simple_exec prg=refine3D_auto pgrp=o mskdiam=180 nparts=10 nthr=8 >> LOG 2>&1
 
@@ -31,21 +31,21 @@ simple_exec prg=refine3D_auto pgrp=o mskdiam=180 nparts=10 nthr=8 >> LOG 2>&1
 
 
 
-#simple_exec prg=abinitio2D ncls=100 mskdiam=190 nthr=32 projfile=5_extract/betagal.simple >> LOG 
+#simple_exec prg=solve2D ncls=100 mskdiam=190 nthr=32 projfile=5_extract/betagal.simple >> LOG
 #echo " >>> PROGRAM: selection" >> LOG
-#simple_exec prg=selection res_threshold=9 oritype=cls2D projfile=6_abinitio2D/betagal.simple >> LOG
-#echo " >>> PROGRAM: abinitio3D" >> LOG
-#simple_exec prg=abinitio3D pgrp=d2 mskdiam=190 nthr=32 projfile=7_selection/betagal.simple >> LOG
+#simple_exec prg=selection res_threshold=9 oritype=cls2D projfile=6_solve2D/betagal.simple >> LOG
+#echo " >>> PROGRAM: solve3D" >> LOG
+#simple_exec prg=solve3D pgrp=d2 mskdiam=190 nthr=32 projfile=7_selection/betagal.simple >> LOG
 #echo " >>> PROGRAM: flex_eigenvol" >> LOG
-#simple_exec prg=flex_eigenvol vol1=8_abinitio3D/rec_final_state01_lp.mrc nthr=32 projfile=8_abinitio3D/betagal.simple >> LOG
+#simple_exec prg=flex_eigenvol vol1=8_solve3D/rec_final_state01_lp.mrc nthr=32 projfile=8_solve3D/betagal.simple >> LOG
 
-#echo " >>> PROGRAM: abinitio2D" >> LOG
-#simple_exec prg=abinitio2D ncls=50 mskdiam=160 nthr=24 >> LOG
+#echo " >>> PROGRAM: solve2D" >> LOG
+#simple_exec prg=solve2D ncls=50 mskdiam=160 nthr=24 >> LOG
 #echo " >>> PROGRAM: selection" >> LOG
-#simple_exec prg=selection res_threshold=9 oritype=cls2D projfile=6_abinitio2D/apof.simple >> LOG
-##simple_exec prg=map_cavgs_selection stk2=abinitio2d_selected.spi
-#echo " >>> PROGRAM: abinitio3D" >> LOG
-#simple_exec prg=abinitio3D pgrp=o mskdiam=160 nthr=40 >> LOG
+#simple_exec prg=selection res_threshold=9 oritype=cls2D projfile=6_solve2D/apof.simple >> LOG
+##simple_exec prg=map_cavgs_selection stk2=solve2d_selected.spi
+#echo " >>> PROGRAM: solve3D" >> LOG
+#simple_exec prg=solve3D pgrp=o mskdiam=160 nthr=40 >> LOG
 
 
 #simple_exec prg=new_project projname=apof

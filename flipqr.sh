@@ -1,4 +1,4 @@
-mkdir -p flipqr; cd flipqr 
+mkdir -p flipqr; cd flipqr
 simple_exec prg=new_project projname=flipqr dir=./ > LOG 2>&1
 filetab_movs.pl mnt/beegfs/elmlund/testing-datasets/FliPQR_FlhB/20180419_104101_FliPQRFlhB_4mgml_collect/movies >> LOG 2>&1
 echo " >>> PROGRAM: import_movies" >> LOG 2>&1
@@ -13,14 +13,14 @@ echo " >>> PROGRAM: pick" >> LOG 2>&1
 simple_exec prg=pick picker=segdiam projfile=3_ctf_estimate/flipqr.simple nparts=5 nthr=8 >> LOG 2>&1
 echo " >>> PROGRAM: extract" >> LOG 2>&1
 simple_exec prg=extract box=256 nparts=5 nthr=8 projfile=4_pick/flipqr.simple >> LOG 2>&1
-echo " >>> PROGRAM: abinitio2D" >> LOG 2>&1
-simple_exec prg=abinitio2D ncls=90 mskdiam=180 nthr=20 nparts=4 >> LOG 2>&1
+echo " >>> PROGRAM: solve2D" >> LOG 2>&1
+simple_exec prg=solve2D ncls=90 mskdiam=180 nthr=20 nparts=4 >> LOG 2>&1
 echo " >>> PROGRAM: model_cavgs_rejection" >> LOG 2>&1
 simple_exec prg=model_cavgs_rejection mskdiam=180 nthr=20 >> LOG 2>&1
-echo " >>> PROGRAM: abinitio3D_cavgs" >> LOG 2>&1
-simple_exec prg=abinitio3D_cavgs pgrp=d2 mskdiam=180 nthr=40 >> LOG 2>&1
-echo " >>> PROGRAM: abinitio3D" >> LOG 2>&1
-simple_exec prg=abinitio3D pgrp=c1 mskdiam=180 nthr=8 nparts=10 cavg_ini_ext=yes >> LOG 2>&1
+echo " >>> PROGRAM: solve3D_cavgs" >> LOG 2>&1
+simple_exec prg=solve3D_cavgs pgrp=d2 mskdiam=180 nthr=40 >> LOG 2>&1
+echo " >>> PROGRAM: solve3D" >> LOG 2>&1
+simple_exec prg=solve3D pgrp=c1 mskdiam=180 nthr=8 nparts=10 cavg_ini_ext=yes >> LOG 2>&1
 echo " >>> PROGRAM: refine3D_auto" >> LOG 2>&1
 simple_exec prg=refine3D_auto pgrp=c1 mskdiam=180 nparts=10 nthr=8 >> LOG 2>&1
 

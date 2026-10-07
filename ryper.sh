@@ -12,15 +12,15 @@ echo " >>> PROGRAM: pick" >> LOG 2>&1
 simple_exec prg=pick picker=segdiam projfile=3_ctf_estimate/ryper.simple nparts=24 nthr=1 >> LOG 2>&1
 echo " >>> PROGRAM: extract" >> LOG 2>&1
 simple_exec prg=extract box=256 nparts=5 nthr=8 projfile=4_pick/ryper.simple >> LOG 2>&1
-echo " >>> PROGRAM: abinitio2D" >> LOG 2>&1
-simple_exec prg=abinitio2D ncls=90 mskdiam=180 nthr=20 nparts=4 >> LOG 2>&1
-echo " >>> PROGRAM: model_cavgs_rejection" >> LOG 2>&1 
+echo " >>> PROGRAM: solve2D" >> LOG 2>&1
+simple_exec prg=solve2D ncls=90 mskdiam=180 nthr=20 nparts=4 >> LOG 2>&1
+echo " >>> PROGRAM: model_cavgs_rejection" >> LOG 2>&1
 simple_exec prg=model_cavgs_rejection mskdiam=180 nthr=20 >> LOG 2>&1
-echo " >>> PROGRAM: abinitio3D_cavgs" >> LOG 2>&1 
-simple_exec prg=abinitio3D_cavgs pgrp=d2 mskdiam=180 nthr=40 >> LOG 2>&1
-echo " >>> PROGRAM: abinitio3D" >> LOG 2>&1
-simple_exec prg=abinitio3D pgrp=d2 mskdiam=180 nthr=8 nparts=10 cavg_ini_ext=yes >> LOG 2>&1
-echo " >>> PROGRAM: refine3D_auto" >> LOG 2>&1 
+echo " >>> PROGRAM: solve3D_cavgs" >> LOG 2>&1
+simple_exec prg=solve3D_cavgs pgrp=d2 mskdiam=180 nthr=40 >> LOG 2>&1
+echo " >>> PROGRAM: solve3D" >> LOG 2>&1
+simple_exec prg=solve3D pgrp=d2 mskdiam=180 nthr=8 nparts=10 cavg_ini_ext=yes >> LOG 2>&1
+echo " >>> PROGRAM: refine3D_auto" >> LOG 2>&1
 simple_exec prg=refine3D_auto pgrp=d2 mskdiam=180 nparts=10 nthr=8 >> LOG 2>&1
 
 
