@@ -45,7 +45,7 @@ echo "Results: $run_dir"
 for system in "${systems[@]}"; do
     # Snapshot the input script and isolate repeated submissions from each other.
     cp -- "$data_checkout/$system.sh" "$run_dir/$system.sh"
-    job_id=$(sbatch --parsable --partition=normal --nodes=1 --ntasks=1 \
+    job_id=$(sbatch --parsable --partition=norm --nodes=1 --ntasks=1 \
         --cpus-per-task=80 --mem="${SIMPLE_TEST_MEMORY:-128G}" \
         --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
         --job-name="simple-$system" --chdir="$run_dir" --export=ALL \
