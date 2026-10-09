@@ -8,6 +8,7 @@
 # (default 24:00:00), SIMPLE_TEST_ACCOUNT (default cluster account).
 # Each node must support 80 CPUs: the existing scripts use nparts=10 nthr=8.
 # Input datasets must be available at the /mnt/beegfs paths in those scripts.
+# Waits for every job and exits nonzero if any submission or job fails.
 # Uses an existing build; does not build SIMPLE or publish the Pages report.
 set -euo pipefail
 
@@ -42,19 +43,30 @@ account_args=()
 if [[ -n ${SIMPLE_TEST_ACCOUNT:-} ]]; then
     account_args=(--account="$SIMPLE_TEST_ACCOUNT")
 fi
+# Each background sbatch waits for its own job; pipefail preserves its exit status.
+# Stream job IDs immediately so jobs.txt remains useful while jobs are running.
+submit_and_wait() {
+    local label=$1
+    shift
+    sbatch --wait "$@" | while IFS= read -r job_id; do
+        printf '%s %s\n' "$label" "$job_id" | tee -a "$run_dir/jobs.txt"
+    done
+}
+wait_pids=()
+wait_labels=()
 echo "Results: $run_dir"
 for system in "${systems[@]}"; do
     # Copy scripts only when submitting outside their checkout.
     if [[ ! "$data_checkout/$system.sh" -ef "$run_dir/$system.sh" ]]; then
         cp -- "$data_checkout/$system.sh" "$run_dir/$system.sh"
     fi
-    job_id=$(sbatch --parsable --partition=norm --nodes=1 --ntasks=1 \
+    submit_and_wait "$system" --parsable --partition=norm --nodes=1 --ntasks=1 \
         --cpus-per-task=80 --mem="${SIMPLE_TEST_MEMORY:-128G}" \
         --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
         --job-name="simple-$system" --chdir="$run_dir" --export=ALL \
         --output="$run_dir/logs/$system-%j.out" \
         --error="$run_dir/logs/$system-%j.err" \
-        /dev/stdin "$system" "$simple_build" <<'SBATCH'
+        /dev/stdin "$system" "$simple_build" <<'SBATCH' &
 #!/usr/bin/env bash
 set -euo pipefail
 system=$1
@@ -65,8 +77,8 @@ export SIMPLE_QSYS=local
 echo "Dataset: $system; job: $SLURM_JOB_ID; host: $(hostname)"
 exec bash -e "./$system.sh"
 SBATCH
-    )
-    printf '%s %s\n' "$system" "$job_id" | tee -a "$run_dir/jobs.txt"
+    wait_pids+=("$!")
+    wait_labels+=("$system")
 done
 
 for test_case in simulated_workflow:6vxx simulated_workflow:1jxy single_workflow:fcc single_workflow:wurtzite; do
@@ -76,13 +88,13 @@ for test_case in simulated_workflow:6vxx simulated_workflow:1jxy single_workflow
     if [[ "$test_name" == single_workflow ]]; then
         label=single_$suite
     fi
-    job_id=$(sbatch --parsable --partition=norm --nodes=1 --ntasks=1 \
+    submit_and_wait "$label" --parsable --partition=norm --nodes=1 --ntasks=1 \
         --cpus-per-task=80 --mem="${SIMPLE_TEST_MEMORY:-128G}" \
         --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
         --job-name="simple-$label" --chdir="$run_dir" --export=ALL \
         --output="$run_dir/logs/$label-%j.out" \
         --error="$run_dir/logs/$label-%j.err" \
-        /dev/stdin "$test_name" "$suite" "$label" "$simple_build" <<'SBATCH'
+        /dev/stdin "$test_name" "$suite" "$label" "$simple_build" <<'SBATCH' &
 #!/usr/bin/env bash
 set -euo pipefail
 test_name=$1
@@ -94,6 +106,19 @@ export SIMPLE_QSYS=local
 echo "Test: $test_name; suite: $suite; job: $SLURM_JOB_ID; host: $(hostname)"
 exec simple_test_exec "test=$test_name" "suite=$suite" > "LOG_$label"
 SBATCH
-    )
-    printf '%s %s\n' "$label" "$job_id" | tee -a "$run_dir/jobs.txt"
+    wait_pids+=("$!")
+    wait_labels+=("$label")
 done
+
+echo "Waiting for all ${#wait_pids[@]} Slurm jobs to finish..."
+failed=0
+for i in "${!wait_pids[@]}"; do
+    if wait "${wait_pids[$i]}"; then
+        echo "Completed: ${wait_labels[$i]}"
+    else
+        status=$?
+        echo "Failed: ${wait_labels[$i]} (submission or job exit status $status)" >&2
+        failed=1
+    fi
+done
+exit "$failed"
