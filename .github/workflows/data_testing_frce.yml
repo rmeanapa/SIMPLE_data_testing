@@ -1,7 +1,7 @@
 name: Run & Display SIMPLE Data Sets
 
 on:
-  #push: {}
+  push: {}
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
@@ -17,7 +17,7 @@ env:
 jobs:
   build_self_hosted:
     name: Build on self-hosted runner
-    runs-on: [self-hosted, Linux_desktop]
+    runs-on: [self-hosted, FRCE_HPC]
     timeout-minutes: 1440
 
     steps:
@@ -37,10 +37,7 @@ jobs:
           export PATH=${SIMPLE_PATH}/scripts:${SIMPLE_PATH}/bin:${PATH}
           which simple_exec
           echo $SIMPLE_PATH
-          for system in $SIMPLE_SYSTEMS; do
-            echo $system
-            bash -e "./${system}.sh"
-          done
+          ./submit_data_testing.sh
           echo "6VXX"
           simple_test_exec test=simulated_workflow suite=6vxx > LOG_6vxx
           echo "1JXY"
