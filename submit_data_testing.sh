@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Submit all SIMPLE_SYSTEMS datasets from data_testing.yml as independent Slurm jobs.
+# Submit all SIMPLE_SYSTEMS datasets and four generated-data tests as independent Slurm jobs.
 # Usage: bash ./submit_data_testing.sh [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]
 # Defaults: checkout containing this script, SIMPLE_BUILD=$SIMPLE_PATH.
 # Dataset scripts run in the current directory; results, logs and jobs.txt stay there.
@@ -29,6 +29,7 @@ for system in "${systems[@]}"; do
 done
 [[ -x "$simple_build/bin/simple_exec" ]] || { echo "Missing executable $simple_build/bin/simple_exec" >&2; exit 1; }
 [[ -x "$simple_build/bin/single_exec" ]] || { echo "Missing executable $simple_build/bin/single_exec" >&2; exit 1; }
+[[ -x "$simple_build/bin/simple_test_exec" ]] || { echo "Missing executable $simple_build/bin/simple_test_exec" >&2; exit 1; }
 [[ -r "$data_checkout/positions_all.box" ]] || { echo "Missing $data_checkout/positions_all.box (required by nanox)" >&2; exit 1; }
 command -v sbatch >/dev/null
 run_dir=$(pwd -P)
@@ -66,4 +67,33 @@ exec bash -e "./$system.sh"
 SBATCH
     )
     printf '%s %s\n' "$system" "$job_id" | tee -a "$run_dir/jobs.txt"
+done
+
+for test_case in simulated_workflow:6vxx simulated_workflow:1jxy single_workflow:fcc single_workflow:wurtzite; do
+    test_name=${test_case%%:*}
+    suite=${test_case#*:}
+    label=$suite
+    if [[ "$test_name" == single_workflow ]]; then
+        label=single_$suite
+    fi
+    job_id=$(sbatch --parsable --partition=norm --nodes=1 --ntasks=1 \
+        --cpus-per-task=80 --mem="${SIMPLE_TEST_MEMORY:-128G}" \
+        --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
+        --job-name="simple-$label" --chdir="$run_dir" --export=ALL \
+        --output="$run_dir/logs/$label-%j.out" \
+        --error="$run_dir/logs/$label-%j.err" \
+        /dev/stdin "$test_name" "$suite" "$label" "$simple_build" <<'SBATCH'
+#!/usr/bin/env bash
+set -euo pipefail
+test_name=$1
+suite=$2
+label=$3
+export SIMPLE_PATH=$4
+export PATH="$SIMPLE_PATH/scripts:$SIMPLE_PATH/bin:$PATH"
+export SIMPLE_QSYS=local
+echo "Test: $test_name; suite: $suite; job: $SLURM_JOB_ID; host: $(hostname)"
+exec simple_test_exec "test=$test_name" "suite=$suite" > "LOG_$label"
+SBATCH
+    )
+    printf '%s %s\n' "$label" "$job_id" | tee -a "$run_dir/jobs.txt"
 done

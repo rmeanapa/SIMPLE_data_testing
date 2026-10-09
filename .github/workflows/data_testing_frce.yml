@@ -38,14 +38,6 @@ jobs:
           which simple_exec
           echo $SIMPLE_PATH
           ./submit_data_testing.sh
-          echo "6VXX"
-          simple_test_exec test=simulated_workflow suite=6vxx > LOG_6vxx
-          echo "1JXY"
-          simple_test_exec test=simulated_workflow suite=1jxy > LOG_1jxy
-          echo "SINGLE FCC Pt"
-          simple_test_exec test=single_workflow suite=fcc > LOG_single_fcc
-          echo "SINGLE wurtzite CdSe"
-          simple_test_exec test=single_workflow suite=wurtzite > LOG_single_wurtzite
 
       - name: Prepare report for Pages
         run: |
