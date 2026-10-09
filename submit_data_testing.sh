@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Submit all SIMPLE_SYSTEMS datasets from data_testing.yml as independent Slurm jobs.
-# Usage: bash ./submit_data_testing.sh [DATA_TESTING_CHECKOUT [SIMPLE_BUILD [OUTPUT_PARENT]]]
-# Defaults: checkout containing this script, SIMPLE_BUILD=$SIMPLE_PATH, OUTPUT_PARENT=$PWD.
+# Usage: bash ./submit_data_testing.sh [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]
+# Defaults: checkout containing this script, SIMPLE_BUILD=$SIMPLE_PATH.
+# Dataset scripts run in the current directory; results, logs and jobs.txt stay there.
 # Load the SIMPLE runtime modules before submission; Slurm inherits this environment.
 # Optional environment: SIMPLE_TEST_MEMORY (default 128G), SIMPLE_TEST_TIME
 # (default 24:00:00), SIMPLE_TEST_ACCOUNT (default cluster account).
@@ -10,8 +11,8 @@
 # Uses an existing build; does not build SIMPLE or publish the Pages report.
 set -euo pipefail
 
-if (( $# > 3 )); then
-    echo "Usage: $0 [DATA_TESTING_CHECKOUT [SIMPLE_BUILD [OUTPUT_PARENT]]]" >&2
+if (( $# > 2 )); then
+    echo "Usage: $0 [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]" >&2
     exit 2
 fi
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
@@ -30,21 +31,22 @@ done
 [[ -x "$simple_build/bin/single_exec" ]] || { echo "Missing executable $simple_build/bin/single_exec" >&2; exit 1; }
 [[ -r "$data_checkout/positions_all.box" ]] || { echo "Missing $data_checkout/positions_all.box (required by nanox)" >&2; exit 1; }
 command -v sbatch >/dev/null
-output_parent=${3:-$PWD}
-mkdir -p -- "$output_parent"
-output_parent=$(cd -- "$output_parent" && pwd -P)
-run_dir=$(mktemp -d "$output_parent/simple-data-testing.XXXXXXXX")
+run_dir=$(pwd -P)
 mkdir -p "$run_dir/logs"
 # nanox.sh reads this relative to its dataset directory.
-cp -- "$data_checkout/positions_all.box" "$run_dir/positions_all.box"
+if [[ ! "$data_checkout/positions_all.box" -ef "$run_dir/positions_all.box" ]]; then
+    cp -- "$data_checkout/positions_all.box" "$run_dir/positions_all.box"
+fi
 account_args=()
 if [[ -n ${SIMPLE_TEST_ACCOUNT:-} ]]; then
     account_args=(--account="$SIMPLE_TEST_ACCOUNT")
 fi
 echo "Results: $run_dir"
 for system in "${systems[@]}"; do
-    # Snapshot the input script and isolate repeated submissions from each other.
-    cp -- "$data_checkout/$system.sh" "$run_dir/$system.sh"
+    # Copy scripts only when submitting outside their checkout.
+    if [[ ! "$data_checkout/$system.sh" -ef "$run_dir/$system.sh" ]]; then
+        cp -- "$data_checkout/$system.sh" "$run_dir/$system.sh"
+    fi
     job_id=$(sbatch --parsable --partition=norm --nodes=1 --ntasks=1 \
         --cpus-per-task=80 --mem="${SIMPLE_TEST_MEMORY:-128G}" \
         --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
