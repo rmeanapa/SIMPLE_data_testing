@@ -1,0 +1,83 @@
+name: Debug one simulated workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Simulated workflow to run
+        required: true
+        default: 6vxx
+        type: choice
+        options:
+          - 6vxx
+          - 1jxy
+
+permissions:
+  contents: read
+
+jobs:
+  simulated_workflow:
+    name: simulated_workflow (${{ inputs.suite }})
+    runs-on: [self-hosted, FRCE_HPC]
+    timeout-minutes: 300
+    steps:
+      - name: Run one Slurm job using the existing SIMPLE build
+        env:
+          SUITE: ${{ inputs.suite }}
+          SIMPLE_PATH: /home/meanapanedar2/SIMPLE/build
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$SUITE" in 6vxx|1jxy) ;; *) echo "Invalid suite: $SUITE" >&2; exit 2 ;; esac
+          run_dir="$GITHUB_WORKSPACE/debug-results/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$run_dir"
+          export PATH="$SIMPLE_PATH/scripts:$SIMPLE_PATH/bin:$PATH"
+          export SIMPLE_QSYS=local
+          export SIMPLE_EMAIL="my.name@uni.edu"
+          export GFORTRAN_ERROR_BACKTRACE=1
+          [[ -x "$SIMPLE_PATH/bin/simple_test_exec" ]]
+          {
+            date -u
+            printf 'Suite: %s\nBuild directory: %s\nSource revision: ' "$SUITE" "$SIMPLE_PATH"
+            git -C "$SIMPLE_PATH" rev-parse HEAD
+            sha256sum "$SIMPLE_PATH/bin/"{simple_exec,single_exec,simple_test_exec}
+          } > "$run_dir/provenance.txt" 2>&1
+          cat "$run_dir/provenance.txt"
+          status=0
+          sbatch --wait --parsable --partition=norm --nodes=1 --ntasks=1 \
+            --cpus-per-task=80 --mem=128G --time=04:00:00 \
+            --job-name="debug-$SUITE" --chdir="$run_dir" --export=ALL \
+            --output="$run_dir/slurm-%j.out" --error="$run_dir/slurm-%j.err" \
+            /dev/stdin "$SUITE" <<'SBATCH' | tee "$run_dir/job-id.txt" || status=$?
+          #!/usr/bin/env bash
+          set -euo pipefail
+          echo "Suite: $1; job: $SLURM_JOB_ID; host: $(hostname)"
+          exec "$SIMPLE_PATH/bin/simple_test_exec" test=simulated_workflow "suite=$1" > "LOG_$1"
+          SBATCH
+          if command -v sacct >/dev/null; then
+            job_id=$(sed -n '1s/;.*//p' "$run_dir/job-id.txt")
+            if [[ "$job_id" =~ ^[0-9]+$ ]]; then
+              sacct -j "$job_id" --parsable2 \
+                --format=JobID,JobName,State,ExitCode,Elapsed,NodeList,MaxRSS,ReqMem \
+                > "$run_dir/slurm-accounting.txt" 2>&1 || true
+            fi
+          fi
+          for file in "$run_dir"/LOG* "$run_dir"/*.out "$run_dir"/*.err "$run_dir"/slurm-accounting.txt; do
+            [[ -f "$file" ]] || continue
+            printf '\nLog: %s\n' "$file"
+            tail -n 160 -- "$file" || true
+          done
+          exit "$status"
+
+      - name: Preserve diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulated-workflow-${{ inputs.suite }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            debug-results/${{ github.run_id }}-${{ github.run_attempt }}/**/LOG*
+            debug-results/${{ github.run_id }}-${{ github.run_attempt }}/*.txt
+            debug-results/${{ github.run_id }}-${{ github.run_attempt }}/**/*.out
+            debug-results/${{ github.run_id }}-${{ github.run_attempt }}/**/*.err
+          if-no-files-found: warn
+          retention-days: 31
