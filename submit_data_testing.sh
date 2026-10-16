@@ -24,7 +24,7 @@ if [[ -z "$simple_build" ]]; then
     exit 2
 fi
 simple_build=$(cd -- "$simple_build" && pwd -P)
-systems=(betagal apof clc motab proteasome trpm4 nanox)
+systems=(betagal betagal_pose_cont apof clc motab proteasome trpm4 nanox)
 for system in "${systems[@]}"; do
     [[ -r "$data_checkout/$system.sh" ]] || { echo "Missing $data_checkout/$system.sh" >&2; exit 1; }
 done
