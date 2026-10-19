@@ -53,22 +53,41 @@ for input in betagal.simple recvol_state01.mrc; do
 done
 echo "Using solve3D output: $solve_dir"
 arms_root="$source_root"
-for arm in 10_pose_cont_default 11_pose_cont_yes 12_pose_cont_only; do
+printf -v arm_default '%02d_refine3D_auto_pose_cont_default' "$((latest_stage + 1))"
+printf -v arm_yes '%02d_refine3D_auto_pose_cont_yes' "$((latest_stage + 2))"
+printf -v arm_only '%02d_refine3D_auto_pose_cont_only' "$((latest_stage + 3))"
+for arm in "$arm_default" "$arm_yes" "$arm_only"; do
     mkdir "$arms_root/$arm"
     cp -p "$solve_dir/betagal.simple" "$arms_root/$arm/betagal.simple"
 done
 
-cd "$arms_root/10_pose_cont_default"
-echo " >>> PROGRAM: refine3D_auto" > LOG 2>&1
-simple_exec prg=refine3D_auto pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
-    projfile="betagal.simple" vol1="$solve_dir/recvol_state01.mrc" mkdir=no >> LOG 2>&1
+run_refine3D_auto_arm() {
+    local arm="$1"
+    local status=0
+    shift
 
-cd "$arms_root/11_pose_cont_yes"
-echo " >>> PROGRAM: refine3D_auto" > LOG 2>&1
-simple_exec prg=refine3D_auto pose_cont=yes pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
-    projfile="betagal.simple" vol1="$solve_dir/recvol_state01.mrc" mkdir=no >> LOG 2>&1
-    
-cd "$arms_root/12_pose_cont_only"
-echo " >>> PROGRAM: refine3D_auto" > LOG 2>&1
-simple_exec prg=refine3D_auto pose_cont=only pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
-    projfile="betagal.simple" vol1="$solve_dir/recvol_state01.mrc" mkdir=no >> LOG 2>&1
+    cd "$arms_root/$arm"
+    printf '>>> PROGRAM: refine3D_auto\n' > LOG
+    simple_exec "$@" >> LOG 2>&1 || status=$?
+    {
+        printf ' >>> PROGRAM: refine3D_auto\n'
+        printf ' >>> EXECUTION DIRECTORY: %s\n' "$arm"
+        sed -E \
+            '/^[[:space:]]*>>> PROGRAM:[[:space:]]*refine3D_auto[[:space:]]*$/d; /^[[:space:]]*>>> EXECUTION DIRECTORY:/d' \
+            LOG
+    } >> "$arms_root/LOG"
+    return "$status"
+}
+
+run_refine3D_auto_arm "$arm_default" \
+    prg=refine3D_auto pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
+    projfile="betagal.simple" vol1="$solve_dir/recvol_state01.mrc" mkdir=no
+
+run_refine3D_auto_arm "$arm_yes" \
+    prg=refine3D_auto pose_cont=yes pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
+    projfile="betagal.simple" vol1="$solve_dir/recvol_state01.mrc" mkdir=no
+
+run_refine3D_auto_arm "$arm_only" \
+    prg=refine3D_auto pose_cont=only pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
+    projfile="betagal.simple" vol1="$solve_dir/recvol_state01.mrc" mkdir=no
+
