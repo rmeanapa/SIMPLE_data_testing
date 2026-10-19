@@ -709,7 +709,9 @@ final_volume_metrics_for_root() {
       if (numeric(pair[2]) && pair[2] + 0 > 0) nptcls = pair[2]
     }
 
+    # Preserve truth FSC when later continuation/polishing reports half-map FSC.
     /RESOLUTION @ FSC=0[.]143[[:space:]]+AVG\/SDEV\/MIN\/MAX:/ {
+      if (truth_found) next
       values = $0
       sub(/^.*AVG\/SDEV\/MIN\/MAX:[[:space:]]*/, "", values)
       count = split(values, field, /[[:space:]]+/)
@@ -720,6 +722,7 @@ final_volume_metrics_for_root() {
     }
 
     /RESOLUTION @ FSC=0[.]5[[:space:]]+AVG\/SDEV\/MIN\/MAX:/ {
+      if (truth_found) next
       values = $0
       sub(/^.*AVG\/SDEV\/MIN\/MAX:[[:space:]]*/, "", values)
       count = split(values, field, /[[:space:]]+/)
@@ -740,6 +743,7 @@ final_volume_metrics_for_root() {
     }
 
     /RESOLUTION AT FSC=0[.]500 DETERMINED TO:/ {
+      if (truth_found) next
       value = $0
       sub(/^.*DETERMINED TO:[[:space:]]*/, "", value)
       split(value, field, /[[:space:]]+/)
@@ -760,6 +764,7 @@ final_volume_metrics_for_root() {
     }
 
     /RESOLUTION AT FSC=0[.]143 DETERMINED TO:/ {
+      if (truth_found) next
       value = $0
       sub(/^.*DETERMINED TO:[[:space:]]*/, "", value)
       split(value, field, /[[:space:]]+/)
@@ -836,6 +841,7 @@ final_volume_metrics_for_root() {
         final_nptcls = nptcls
         metric_block = block
         found = 1
+        truth_found = 1
       }
       next
     }
@@ -846,11 +852,12 @@ final_volume_metrics_for_root() {
 
     /ERROR STOP/ {
       error_stop[block] = 1
+      error_seen = 1
     }
 
     END {
       if (!found) exit 1
-      normal = normal_stop[metric_block] && !error_stop[metric_block] ? 1 : 0
+      normal = normal_stop[metric_block] && !error_stop[metric_block] && (!truth_found || !error_seen) ? 1 : 0
       printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d\n", \
         final_avg, final_fsc0143, final_program, final_section, final_smpd, \
         final_box, final_pgrp, final_nptcls, \
