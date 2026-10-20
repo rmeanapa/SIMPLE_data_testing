@@ -28,9 +28,11 @@ if [[ -z "$simple_build" ]]; then
     exit 2
 fi
 simple_build=$(cd -- "$simple_build" && pwd -P)
+partition=norm
 systems=(betagal apof clc motab proteasome trpm4 nanox)
 test_cases=(simulated_workflow:6vxx simulated_workflow:1jxy single_workflow:fcc single_workflow:wurtzite)
 if [[ -n "$selected_system" ]]; then
+    partition=csbdevel
     systems=("$selected_system")
     test_cases=()
 fi
@@ -79,7 +81,7 @@ for system in "${systems[@]}"; do
     if [[ ! "$data_checkout/$system.sh" -ef "$run_dir/$system.sh" ]]; then
         cp -- "$data_checkout/$system.sh" "$run_dir/$system.sh"
     fi
-    submit_and_wait "$system" --parsable --partition=norm --nodes=1 --ntasks=1 \
+    submit_and_wait "$system" --parsable --partition="$partition" --nodes=1 --ntasks=1 \
         --cpus-per-task=80 --mem="${SIMPLE_TEST_MEMORY:-128G}" \
         --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
         --job-name="simple-$system" --chdir="$run_dir" --export=ALL \
@@ -107,7 +109,7 @@ for test_case in "${test_cases[@]}"; do
     if [[ "$test_name" == single_workflow ]]; then
         label=single_$suite
     fi
-    submit_and_wait "$label" --parsable --partition=norm --nodes=1 --ntasks=1 \
+    submit_and_wait "$label" --parsable --partition="$partition" --nodes=1 --ntasks=1 \
         --cpus-per-task=80 --mem="${SIMPLE_TEST_MEMORY:-128G}" \
         --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
         --job-name="simple-$label" --chdir="$run_dir" --export=ALL \
@@ -131,7 +133,7 @@ done
 
 if [[ "$selected_system" == streptavidin ]]; then
 # Each array task owns one solve3D invocation, runtime project and output directory.
-submit_and_wait streptavidin --parsable --partition=norm --nodes=1 --ntasks=1 \
+submit_and_wait streptavidin --parsable --partition="$partition" --nodes=1 --ntasks=1 \
     --array=1-100 --cpus-per-task=80 --mem="${SIMPLE_TEST_MEMORY:-128G}" \
     --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
     --job-name=simple-streptavidin --chdir="$run_dir" --export=ALL \
