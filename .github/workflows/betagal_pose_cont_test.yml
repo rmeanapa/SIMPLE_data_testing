@@ -1,0 +1,100 @@
+name: Betagal pose continuation CI
+
+on:
+  push: {}
+  schedule:
+    - cron: '0 0 * * *'
+      timezone: America/New_York
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+jobs:
+  betagal_pose_cont:
+    runs-on: [self-hosted, FRCE_HPC]
+    timeout-minutes: 1440
+    env:
+      SIMPLE_PATH: /home/meanapanedar2/SIMPLE/build
+      RUN_DIR: ${{ github.workspace }}/ci_runs/${{ github.run_id }}_${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run betagal pose-continuation comparison
+        run: |
+          mkdir -p "$RUN_DIR"
+          cd "$RUN_DIR"
+          bash "$GITHUB_WORKSPACE/submit_data_testing.sh" betagal_pose_cont
+      - name: Generate betagal_pose_cont report
+        if: always()
+        run: REPORT_SITE_DIR="$RUN_DIR/betagal_pose_cont/site" bash ./make_report.sh "$RUN_DIR/betagal_pose_cont"
+      - name: Upload logs and comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: betagal_pose_cont-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ci_runs/**/betagal_pose_cont/site/
+            ci_runs/**/betagal_pose_cont/**/LOG
+            ci_runs/**/logs/betagal_pose_cont-*.out
+            ci_runs/**/logs/betagal_pose_cont-*.err
+            ci_runs/**/jobs.txt
+      - name: Upload independent betagal_pose_cont webpage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: betagal_pose_cont-report-site
+          path: ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/betagal_pose_cont/site/
+          if-no-files-found: error
+          retention-days: 31
+
+  publish_report:
+    name: Publish betagal_pose_cont webpage
+    needs: betagal_pose_cont
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: simple-report-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Preserve the latest main report when available
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir site
+          artifact=$(gh api "repos/$GH_REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts | map(select(.expired == false and (.name | startswith("simple-data-sets-report-")))) | first | .id // empty')
+          if [[ -n "$artifact" ]]; then
+            gh api "repos/$GH_REPO/actions/artifacts/$artifact/zip" > main-report.zip
+            unzip -q main-report.zip -d site
+          else
+            printf '%s\n' '<a href="betagal_pose_cont/">Betagal pose-continuation report</a>' > site/index.html
+          fi
+          # Include the latest independent peer report before deploying the site.
+          peer_artifact=$(gh api "repos/$GH_REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts | map(select(.expired == false and .name == "streptavidin-report-site")) | first | .id // empty')
+          if [[ -n "$peer_artifact" ]]; then
+            gh api "repos/$GH_REPO/actions/artifacts/$peer_artifact/zip" > peer-report.zip
+            rm -rf site/streptavidin
+            mkdir -p site/streptavidin
+            unzip -q peer-report.zip -d site/streptavidin
+          fi
+          rm -rf site/betagal_pose_cont
+      - uses: actions/download-artifact@v4
+        with:
+          name: betagal_pose_cont-report-site
+          path: site/betagal_pose_cont
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - name: Deploy betagal_pose_cont webpage
+        id: deployment
+        uses: actions/deploy-pages@v4

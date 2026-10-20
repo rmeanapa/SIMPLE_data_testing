@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Submit all SIMPLE_SYSTEMS datasets and four generated-data tests as independent Slurm jobs.
-# Usage: bash ./submit_data_testing.sh [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]
+# Submit the normal datasets, or one independent dataset campaign.
+# Usage: bash ./submit_data_testing.sh [streptavidin|betagal_pose_cont] [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]
 # Defaults: checkout containing this script, SIMPLE_BUILD=$SIMPLE_PATH.
 # Dataset scripts run in the current directory; results, logs and jobs.txt stay there.
 # Load the SIMPLE runtime modules before submission; Slurm inherits this environment.
@@ -12,8 +12,12 @@
 # Uses an existing build; does not build SIMPLE or publish the Pages report.
 set -euo pipefail
 
+selected_system=""
+case "${1:-}" in
+    streptavidin|betagal_pose_cont) selected_system=$1; shift ;;
+esac
 if (( $# > 2 )); then
-    echo "Usage: $0 [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]" >&2
+    echo "Usage: $0 [streptavidin|betagal_pose_cont] [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]" >&2
     exit 2
 fi
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
@@ -24,19 +28,34 @@ if [[ -z "$simple_build" ]]; then
     exit 2
 fi
 simple_build=$(cd -- "$simple_build" && pwd -P)
-systems=(betagal betagal_pose_cont apof clc motab proteasome trpm4 nanox)
+systems=(betagal apof clc motab proteasome trpm4 nanox)
+test_cases=(simulated_workflow:6vxx simulated_workflow:1jxy single_workflow:fcc single_workflow:wurtzite)
+if [[ -n "$selected_system" ]]; then
+    systems=("$selected_system")
+    test_cases=()
+fi
+if [[ "$selected_system" == streptavidin ]]; then
+    systems=()
+    [[ -r "$data_checkout/streptav4.sh" ]] || { echo "Missing $data_checkout/streptav4.sh" >&2; exit 1; }
+fi
 for system in "${systems[@]}"; do
     [[ -r "$data_checkout/$system.sh" ]] || { echo "Missing $data_checkout/$system.sh" >&2; exit 1; }
 done
 [[ -x "$simple_build/bin/simple_exec" ]] || { echo "Missing executable $simple_build/bin/simple_exec" >&2; exit 1; }
-[[ -x "$simple_build/bin/single_exec" ]] || { echo "Missing executable $simple_build/bin/single_exec" >&2; exit 1; }
-[[ -x "$simple_build/bin/simple_test_exec" ]] || { echo "Missing executable $simple_build/bin/simple_test_exec" >&2; exit 1; }
-[[ -r "$data_checkout/positions_all.box" ]] || { echo "Missing $data_checkout/positions_all.box (required by nanox)" >&2; exit 1; }
+if [[ -z "$selected_system" ]]; then
+    [[ -x "$simple_build/bin/single_exec" ]] || { echo "Missing executable $simple_build/bin/single_exec" >&2; exit 1; }
+    [[ -x "$simple_build/bin/simple_test_exec" ]] || { echo "Missing executable $simple_build/bin/simple_test_exec" >&2; exit 1; }
+    [[ -r "$data_checkout/positions_all.box" ]] || { echo "Missing positions_all.box (required by nanox)" >&2; exit 1; }
+fi
 command -v sbatch >/dev/null
 run_dir=$(pwd -P)
 mkdir -p "$run_dir/logs"
+streptavidin_dir="$run_dir/streptavidin"
+if [[ "$selected_system" == streptavidin ]]; then
+    mkdir "$streptavidin_dir" # Refuse an old campaign before submitting any jobs.
+fi
 # nanox.sh reads this relative to its dataset directory.
-if [[ ! "$data_checkout/positions_all.box" -ef "$run_dir/positions_all.box" ]]; then
+if [[ -z "$selected_system" && ! "$data_checkout/positions_all.box" -ef "$run_dir/positions_all.box" ]]; then
     cp -- "$data_checkout/positions_all.box" "$run_dir/positions_all.box"
 fi
 account_args=()
@@ -81,7 +100,7 @@ SBATCH
     wait_labels+=("$system")
 done
 
-for test_case in simulated_workflow:6vxx simulated_workflow:1jxy single_workflow:fcc single_workflow:wurtzite; do
+for test_case in "${test_cases[@]}"; do
     test_name=${test_case%%:*}
     suite=${test_case#*:}
     label=$suite
@@ -109,6 +128,43 @@ SBATCH
     wait_pids+=("$!")
     wait_labels+=("$label")
 done
+
+if [[ "$selected_system" == streptavidin ]]; then
+# Each array task owns one solve3D invocation, runtime project and output directory.
+submit_and_wait streptavidin --parsable --partition=norm --nodes=1 --ntasks=1 \
+    --array=1-100 --cpus-per-task=80 --mem="${SIMPLE_TEST_MEMORY:-128G}" \
+    --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
+    --job-name=simple-streptavidin --chdir="$run_dir" --export=ALL \
+    --output="$run_dir/logs/streptavidin-%A_%a.out" \
+    --error="$run_dir/logs/streptavidin-%A_%a.err" \
+    /dev/stdin "$data_checkout" "$simple_build" "$streptavidin_dir" <<'SBATCH' &
+#!/usr/bin/env bash
+set -euo pipefail
+checkout=$1
+export SIMPLE_PATH=$2
+printf -v task_dir '%s/restart_%02d' "$3" "$SLURM_ARRAY_TASK_ID"
+mkdir "$task_dir"
+export STREPTAVIDIN_RUN_DIR="$task_dir" STREPTAVIDIN_RESTARTS=1
+export PATH="$SIMPLE_PATH/bin:$SIMPLE_PATH/scripts:$PATH"
+export SIMPLE_QSYS=local
+export OMP_NUM_THREADS=14 OMP_THREAD_LIMIT=128 OMP_WAIT_POLICY=PASSIVE OPENBLAS_NUM_THREADS=1
+# Separate reproducible starting draws even when all tasks start simultaneously.
+export SIMPLE_SEED=$((20261020 + SLURM_ARRAY_TASK_ID))
+echo "Job $SLURM_ARRAY_JOB_ID task $SLURM_ARRAY_TASK_ID host $(hostname) seed $SIMPLE_SEED"
+bash "$checkout/streptav4.sh" > "$task_dir/LOG" 2>&1
+# The solve3D restart wrapper can return zero after a failed reconstruction.
+restart_log="$task_dir/SOLVE3D_OUTPUT_RESTART1"
+grep -q 'SIMPLE_SOLVE3D NORMAL STOP' "$restart_log"
+if grep -qE '^ERROR!|ERROR STOP' "$restart_log"; then exit 1; fi
+mapfile -t volumes < <(find "$task_dir" -mindepth 2 -maxdepth 2 -type f -name rec_final_state01.mrc)
+if [[ ${#volumes[@]} -ne 1 || ! -s "${volumes[0]}" ]]; then
+    echo "Restart $SLURM_ARRAY_TASK_ID did not produce one final volume" >&2
+    exit 1
+fi
+SBATCH
+wait_pids+=("$!")
+wait_labels+=(streptavidin)
+fi
 
 echo "Waiting for all ${#wait_pids[@]} Slurm jobs to finish..."
 failed=0

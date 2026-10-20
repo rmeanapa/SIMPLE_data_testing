@@ -1,0 +1,102 @@
+name: Streptavidin 100-restart CI
+
+on:
+  push: {}
+  schedule:
+    - cron: '0 0 * * *'
+      timezone: America/New_York
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+jobs:
+  streptavidin:
+    runs-on: [self-hosted, FRCE_HPC]
+    timeout-minutes: 1440
+    env:
+      SIMPLE_PATH: /home/meanapanedar2/SIMPLE/build
+      RUN_DIR: ${{ github.workspace }}/ci_runs/${{ github.run_id }}_${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run 100 streptavidin reconstructions
+        run: |
+          mkdir -p "$RUN_DIR"
+          cd "$RUN_DIR"
+          bash "$GITHUB_WORKSPACE/submit_data_testing.sh" streptavidin
+      - name: Generate streptavidin report
+        if: always()
+        run: REPORT_SITE_DIR="$RUN_DIR/streptavidin/site" bash ./make_report.sh "$RUN_DIR/streptavidin"
+      - name: Upload final volumes, logs and comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: streptavidin-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ci_runs/**/streptavidin/site/
+            ci_runs/**/streptavidin/restart_*/*_solve3D/rec_final_state01.mrc
+            ci_runs/**/streptavidin/restart_*/SOLVE3D_OUTPUT_RESTART*
+            ci_runs/**/streptavidin/restart_*/LOG
+            ci_runs/**/logs/streptavidin-*.out
+            ci_runs/**/logs/streptavidin-*.err
+            ci_runs/**/jobs.txt
+      - name: Upload independent streptavidin webpage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: streptavidin-report-site
+          path: ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/streptavidin/site/
+          if-no-files-found: error
+          retention-days: 31
+
+  publish_report:
+    name: Publish streptavidin webpage
+    needs: streptavidin
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: simple-report-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Preserve the latest main report when available
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir site
+          artifact=$(gh api "repos/$GH_REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts | map(select(.expired == false and (.name | startswith("simple-data-sets-report-")))) | first | .id // empty')
+          if [[ -n "$artifact" ]]; then
+            gh api "repos/$GH_REPO/actions/artifacts/$artifact/zip" > main-report.zip
+            unzip -q main-report.zip -d site
+          else
+            printf '%s\n' '<a href="streptavidin/">Streptavidin report</a>' > site/index.html
+          fi
+          # Include the latest independent peer report before deploying the site.
+          peer_artifact=$(gh api "repos/$GH_REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts | map(select(.expired == false and .name == "betagal_pose_cont-report-site")) | first | .id // empty')
+          if [[ -n "$peer_artifact" ]]; then
+            gh api "repos/$GH_REPO/actions/artifacts/$peer_artifact/zip" > peer-report.zip
+            rm -rf site/betagal_pose_cont
+            mkdir -p site/betagal_pose_cont
+            unzip -q peer-report.zip -d site/betagal_pose_cont
+          fi
+          rm -rf site/streptavidin
+      - uses: actions/download-artifact@v4
+        with:
+          name: streptavidin-report-site
+          path: site/streptavidin
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - name: Deploy streptavidin webpage
+        id: deployment
+        uses: actions/deploy-pages@v4

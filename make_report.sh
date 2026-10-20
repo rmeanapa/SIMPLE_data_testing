@@ -5,6 +5,7 @@
 #
 # By default this writes build/index.html plus per-system reports in
 # build/reports/. Set REPORT_SITE_DIR to choose a different output directory.
+# Pass streptavidin to compare all 100 solve3D restarts against truth.
 
 set -euo pipefail
 
@@ -44,6 +45,15 @@ for root_arg in "$@"; do
   elif [[ -d "$SCRIPT_DIR/$root_arg" ]]; then
     SYSTEM_ROOTS+=("$(cd "$SCRIPT_DIR/$root_arg" && pwd -P)")
   else
+    case "$root_arg" in
+      streptavidin|streptav4|streptavin)
+        streptavidin_root="${REPORT_STREPTAVIDIN_ROOT:-/mnt/beegfs/elmlund/datasets_for_nightly_tests/streptavidin}"
+        if [[ -d "$streptavidin_root" ]]; then
+          SYSTEM_ROOTS+=("$(cd "$streptavidin_root" && pwd -P)")
+          continue
+        fi
+        ;;
+    esac
     echo "Input directory does not exist: $root_arg" >&2
     exit 1
   fi
@@ -77,6 +87,186 @@ display_name_for_root() {
       basename "$1"
       ;;
   esac
+}
+
+is_streptavidin_root() {
+  case "$(basename "$1")" in
+    streptavidin|streptav4|streptavin) return 0 ;;
+  esac
+  [[ -f "$1/8_select_particles/streptav4.simple" ]]
+}
+
+streptavidin_comparison_dir() {
+  local name
+  name="$(basename "$1")"
+  name="${name//[^A-Za-z0-9._-]/_}"
+  printf '%s/comparisons/%s\n' "$PAGES_OUTPUT_DIR" "$name"
+}
+
+# SIMPLE supplies header inspection, docking and FSC; the existing report owns HTML.
+streptavidin_simple() {
+  local label="$1"
+  shift
+  local status=0
+  env OMP_NUM_THREADS=1 OMP_THREAD_LIMIT=1 OPENBLAS_NUM_THREADS=1 \
+    SIMPLE_QSYS=local SIMPLE_SEED=20260923 "$STREPTAVIDIN_EXEC" "$@" mkdir=no nthr=1 \
+    > "$label.log" 2>&1 || status=$?
+  if (( status )); then
+    printf '%s failed (exit %s); see %s.log\n' "$label" "$status" "$label" > error.txt
+    return 1
+  fi
+}
+
+streptavidin_compare() (
+  local volume="$1" truth="$2" work="$3"
+  local box pixel truth_box truth_pixel metrics hand cc direct mirrored fsc05 fsc0143
+  cd "$work" || return 1
+  rm -f direct.txt mirrored.txt mirrored_input.mrc docked_direct.mrc docked_mirrored.mrc truth_fsc.csv error.txt
+  metrics=$(volume_header_metrics "$volume" 1) || { echo 'Cannot read output volume grid' > error.txt; return 1; }
+  IFS='|' read -r box pixel <<< "$metrics"
+  metrics=$(volume_header_metrics "$truth" 1) || { echo 'Cannot read ground-truth volume grid' > error.txt; return 1; }
+  IFS='|' read -r truth_box truth_pixel <<< "$metrics"
+  if ! awk -v b="$box" -v p="$pixel" -v tb="$truth_box" -v tp="$truth_pixel" \
+      'BEGIN { d=p-tp; if(d<0)d=-d; exit !(b==tb && d<=tp*0.0001) }'; then
+    echo 'Truth/output grids differ; resample to a common physical grid before comparison' > error.txt
+    return 1
+  fi
+  if ! awk -v b="$box" -v p="$pixel" 'BEGIN { exit !(b*p>80) }'; then
+    echo 'Comparison mask must fit inside the volume' > error.txt
+    return 1
+  fi
+  streptavidin_simple mirror prg=volops vol1="$volume" outvol="$work/mirrored_input.mrc" \
+    mirr=x smpd="$pixel" stats=no || return 1
+  for hand in direct mirrored; do
+    local input="$volume"
+    [[ "$hand" != mirrored ]] || input="$work/mirrored_input.mrc"
+    streptavidin_simple "dock_$hand" prg=dock_volpair vol1="$truth" vol2="$input" \
+      outvol="$work/docked_$hand.mrc" outfile="$work/$hand.txt" smpd="$pixel" \
+      hp=100 lp=20 mskdiam=80 || return 1
+    cc=$(awk -F= '/^cc=/ {gsub(/[[:space:]]/, "", $2); print $2; exit}' "$hand.txt")
+    if ! awk -v cc="$cc" 'BEGIN {exit !(cc ~ /^[-+]?[0-9]*[.]?[0-9]+([Ee][-+]?[0-9]+)?$/ && cc>=-1 && cc<=1)}'; then
+      echo "Invalid docking correlation for $hand" > error.txt
+      return 1
+    fi
+    if [[ "$hand" == direct ]]; then direct="$cc"; else mirrored="$cc"; fi
+  done
+  hand=direct
+  if awk -v d="$direct" -v m="$mirrored" 'BEGIN {exit !(m>d)}'; then hand=mirrored; fi
+  streptavidin_simple truth_fsc prg=fsc vol1="$truth" vol2="$work/docked_$hand.mrc" \
+    smpd="$pixel" mskdiam=80 automsk=no || return 1
+  fsc05=$(awk '/RESOLUTION AT FSC=0[.]500 DETERMINED TO:/ {print $NF; exit}' truth_fsc.log)
+  fsc0143=$(awk '/RESOLUTION AT FSC=0[.]143 DETERMINED TO:/ {print $NF; exit}' truth_fsc.log)
+  if ! awk -v a="$fsc05" -v b="$fsc0143" 'BEGIN {
+      n="^[+]?[0-9]*[.]?[0-9]+([Ee][-+]?[0-9]+)?$"; exit !(a~n && b~n && a>0 && b>0)
+    }'; then
+    echo 'Missing or invalid truth FSC resolutions' > error.txt
+    return 1
+  fi
+  awk 'BEGIN {print "resolution_angstrom,fsc"}
+    /RESOLUTION:/ && /CORRELATION:/ {
+      value=$0; sub(/^.*RESOLUTION:[[:space:]]*/, "", value); split(value,a,/[[:space:]]+/)
+      value=$0; sub(/^.*CORRELATION:[[:space:]]*/, "", value); split(value,b,/[[:space:]]+/)
+      print a[1] "," b[1]
+    }' truth_fsc.log > truth_fsc.csv
+  if [[ $(wc -l < truth_fsc.csv) -le 1 ]]; then
+    echo 'Truth FSC curve not found' > error.txt
+    return 1
+  fi
+  printf '%s|%s|%s|%s|%s\n' "$direct" "$mirrored" "$hand" "$fsc05" "$fsc0143"
+)
+
+write_streptavidin_comparisons() {
+  local root="$1" out truth campaign task log directory volume error status metrics work index count=0
+  local direct mirrored hand fsc05 fsc0143 details name
+  local directories=() candidates=() tasks=("$1"/restart_[0-9]*)
+  out=$(streptavidin_comparison_dir "$root")
+  mkdir -p "$out"
+  out=$(cd "$out" && pwd -P)
+  rm -f "$out/results.json" "$out/results.csv" # Superseded by the table and TSV.
+  truth="${REPORT_STREPTAVIDIN_TRUTH:-/mnt/beegfs/elmlund/datasets_for_nightly_tests/streptavidin/ground_truth.mrc}"
+  truth=$(realpath -m -- "$truth")
+  STREPTAVIDIN_EXEC="${REPORT_SIMPLE_EXEC:-${SIMPLE_PATH:+$SIMPLE_PATH/bin/}simple_exec}"
+  # Commands execute under comparisons/, so resolve any relative executable first.
+  if [[ "$STREPTAVIDIN_EXEC" == */* ]]; then STREPTAVIDIN_EXEC=$(realpath -m -- "$STREPTAVIDIN_EXEC"); fi
+  campaign="$root"
+  if ! compgen -G "$root/SOLVE3D_OUTPUT_RESTART*" > /dev/null && \
+      ! compgen -G "$root/*_solve3D" > /dev/null && [[ -d "$root/8_select_particles" ]]; then
+    campaign="$root/8_select_particles"
+  fi
+  printf 'restart\tvolume\tstatus\tdirect_cc\tmirrored_cc\thand\tfsc05\tfsc0143\terror\n' > "$out/results.tsv"
+  {
+    printf '<h2>Streptavidin: all restart volumes against ground truth</h2>\n'
+    printf '<p>Ground truth: <code>%s</code>. Both hands docked at 100–20 Å; truth FSC uses an 80 Å spherical soft mask.</p>\n' "$(printf '%s' "$truth" | html_escape)"
+    printf '<table><thead><tr><th>Restart</th><th>Output volume</th><th>Status</th><th>Direct docking CC</th><th>Mirrored docking CC</th><th>Selected hand</th><th>Truth FSC=0.5 (Å)</th><th>Truth FSC=0.143 (Å)</th><th>Details</th></tr></thead><tbody>\n'
+  } > "$out/table.html"
+  for index in {1..100}; do
+    task="$campaign"; log="$task/SOLVE3D_OUTPUT_RESTART$index"
+    error=""; volume=""; directory=""; status=missing; details=""
+    direct=""; mirrored=""; hand=""; fsc05=""; fsc0143=""
+    if [[ -d "${tasks[0]}" ]]; then
+      printf -v task '%s/restart_%02d' "$root" "$index"
+      log="$task/SOLVE3D_OUTPUT_RESTART1"
+      [[ -d "$task" ]] || error='Slurm restart output directory missing'
+    fi
+    if [[ -f "$log" ]]; then
+      mapfile -t candidates < <(awk '/^[[:space:]]*>>> EXECUTION DIRECTORY:/ {
+        sub(/^[[:space:]]*>>> EXECUTION DIRECTORY:[[:space:]]*/, ""); sub(/[[:space:]]+$/, "")
+        name=$0; sub(/^.*\//, "", name); if(name ~ /^[0-9]+_solve3D$/) print
+      }' "$log" | sort -u)
+      if [[ ${#candidates[@]} -eq 1 ]]; then
+        directory="${candidates[0]}"
+        [[ "$directory" == /* ]] || directory="$task/$directory"
+        directory=$(realpath -m -- "$directory")
+        [[ "${directory%/*}" == "$task" ]] || error='Restart log points outside this dataset directory'
+      else
+        error='Restart log has no unique outer solve3D directory'
+      fi
+      if grep -qE '^ERROR!|ERROR STOP' "$log"; then
+        error=$(awk '/^ERROR!/ {print; exit}' "$log")
+        error="${error:-Restart log reports ERROR STOP}"; status=failed
+      elif ! grep -q 'SIMPLE_SOLVE3D NORMAL STOP' "$log"; then
+        error='Restart has no successful solve3D completion marker'
+      fi
+    elif compgen -G "$task/SOLVE3D_OUTPUT_RESTART*" > /dev/null || [[ -d "${tasks[0]}" ]]; then
+      error="${error:-Missing restart log}"
+    else
+      mapfile -t directories < <(find "$task" -mindepth 1 -maxdepth 1 -type d \
+        -regextype posix-extended -regex '.*/[0-9]+_solve3D' | sort -V)
+      if [[ ${#directories[@]} -gt 100 ]]; then
+        error='More than 100 output directories; restart logs are required to identify the campaign'
+      elif [[ ${#directories[@]} -ge $index ]]; then
+        directory="${directories[index-1]}"
+      fi
+    fi
+    if [[ -z "$error" ]]; then
+      for name in rec_final_state01.mrc recvol_state01.mrc; do
+        if [[ -n "$directory" && -f "$directory/$name" ]]; then volume="$directory/$name"; break; fi
+      done
+      if [[ -z "$volume" ]]; then error='Final volume not found'; fi
+    fi
+    printf -v work '%s/restart_%02d' "$out" "$index"
+    if [[ -z "$error" ]]; then
+      mkdir -p "$work"
+      if metrics=$(streptavidin_compare "$volume" "$truth" "$work"); then
+        IFS='|' read -r direct mirrored hand fsc05 fsc0143 <<< "$metrics"
+        status=compared; count=$((count+1))
+        details="<a href=\"../comparisons/$(basename "$out")/$(basename "$work")/truth_fsc.csv\">FSC curve CSV</a>"
+      else
+        error=$(cat "$work/error.txt"); status=error
+      fi
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$index" "$volume" "$status" \
+      "$direct" "$mirrored" "$hand" "$fsc05" "$fsc0143" "${error//$'\t'/ }" >> "$out/results.tsv"
+    {
+      printf '<tr><td>%s</td><td>%s</td><td>%s</td>' "$index" "$(printf '%s' "$volume" | html_escape)" "$status"
+      for metrics in "$direct" "$mirrored" "$hand" "$fsc05" "$fsc0143"; do
+        printf '<td>%s</td>' "$(html_metric_value "$metrics")"
+      done
+      printf '<td>%s%s</td></tr>\n' "$(printf '%s' "$error" | html_escape)" "$details"
+    } >> "$out/table.html"
+  done
+  printf '</tbody></table><p>%s/100 expected restarts compared.</p>\n' "$count" >> "$out/table.html"
+  printf '%s/100\n' "$count" > "$out/count.txt"
 }
 
 has_ground_truth_for_root() {
@@ -299,9 +489,14 @@ final_volume_for_root() {
 volume_header_metrics() {
   local volume="$1"
   local info_exec=""
+  local strict="${2:-0}"
   local info_output
 
-  if [[ -n "${SIMPLE_PATH:-}" && -x "$SIMPLE_PATH/bin/simple_exec" ]]; then
+  if [[ -n "${STREPTAVIDIN_EXEC:-}" ]]; then
+    info_exec="$STREPTAVIDIN_EXEC"
+  elif [[ -n "${REPORT_SIMPLE_EXEC:-}" ]]; then
+    info_exec="$REPORT_SIMPLE_EXEC"
+  elif [[ -n "${SIMPLE_PATH:-}" && -x "$SIMPLE_PATH/bin/simple_exec" ]]; then
     info_exec="$SIMPLE_PATH/bin/simple_exec"
   elif command -v simple_exec >/dev/null 2>&1; then
     info_exec=$(command -v simple_exec)
@@ -309,22 +504,26 @@ volume_header_metrics() {
     return 1
   fi
 
-  info_output=$("$info_exec" prg=info_image fname="$volume" stats=no vis=no 2>&1) || return 1
-  printf '%s\n' "$info_output" | awk '
+  info_output=$(env OMP_NUM_THREADS=1 OMP_THREAD_LIMIT=1 OPENBLAS_NUM_THREADS=1 \
+    "$info_exec" prg=info_image fname="$volume" stats=no vis=no mkdir=no nthr=1 2>&1) || return 1
+  printf '%s\n' "$info_output" | awk -v strict="$strict" '
+    BEGIN { valid=1 }
     /Number of columns, rows, sections:/ {
       value = $0
       sub(/^.*Number of columns, rows, sections:[[:space:]]*/, "", value)
       split(value, dims, /[[:space:]]+/)
       box = dims[1]
+      if (strict && (dims[2]!=box || dims[3]!=box)) valid=0
     }
     /Pixel size[[:space:]]*:/ {
       value = $0
       sub(/^.*Pixel size[[:space:]]*:[[:space:]]*/, "", value)
       split(value, fields, /[[:space:]]+/)
       smpd = fields[1]
+      if (strict && ((fields[2]!="" && fields[2]!=smpd) || (fields[3]!="" && fields[3]!=smpd))) valid=0
     }
     END {
-      if (box + 0 > 0 && smpd + 0 > 0) {
+      if (valid && box + 0 > 0 && smpd + 0 > 0) {
         printf "%s|%s\n", box, smpd
       } else {
         exit 1
@@ -1437,6 +1636,13 @@ append_system_report() {
   system_name=$(basename "$ROOT")
   system_label=$(display_name_for_root "$ROOT")
 
+  if is_streptavidin_root "$system_root"; then
+    printf '<section class="system-report"><h1>Streptavidin restart comparisons</h1>\n' >> "$OUTPUT"
+    cat "$(streptavidin_comparison_dir "$system_root")/table.html" >> "$OUTPUT"
+    printf '</section>\n' >> "$OUTPUT"
+    return 0
+  fi
+
   while IFS= read -r jpg; do
     jpgs+=("$jpg")
   done < <(selected_jpgs_for_root)
@@ -1721,6 +1927,8 @@ write_report_html() {
       border-radius: 4px;
       padding: 4px 6px;
     }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { border: 1px solid #ddd; padding: 6px; text-align: left; overflow-wrap: anywhere; }
     .card span { font-size: 12px; color: #666; word-break: break-all; }
     .log-tail {
       background: #111827;
@@ -1803,6 +2011,13 @@ write_pages_site() {
   local original_roots=("${SYSTEM_ROOTS[@]}")
 
   mkdir -p "$reports_dir"
+
+  # Keep comparisons and SIMPLE command products in the report, never in the dataset.
+  for system_root in "${original_roots[@]}"; do
+    if is_streptavidin_root "$system_root"; then
+      write_streptavidin_comparisons "$system_root"
+    fi
+  done
 
   for system_root in "${original_roots[@]}"; do
     system_name="$(basename "$system_root")"
@@ -1969,6 +2184,13 @@ HTML_INDEX_HEAD
     system_name="$(basename "$system_root")"
     system_name="${system_name//[^A-Za-z0-9._-]/_}"
     system_label="$(display_name_for_root "$system_root" | html_escape)"
+    if is_streptavidin_root "$system_root"; then
+      comparison_counts=$(cat "$(streptavidin_comparison_dir "$system_root")/count.txt")
+      printf '<li class="report-row"><div class="report-info"><a href="reports/report_%s.html">Streptavidin — 100 solve3D restarts</a><span>%s volumes compared against ground truth; per-restart docking and truth FSC in report</span></div></li>\n' \
+        "$system_name" "$comparison_counts" >> "$output_dir/index.html"
+      continue
+    fi
+
     has_ground_truth=0
     if has_ground_truth_for_root "$system_root"; then
       has_ground_truth=1
