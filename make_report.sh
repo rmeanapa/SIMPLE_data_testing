@@ -2030,6 +2030,15 @@ write_pages_site() {
 
   SYSTEM_ROOTS=("${original_roots[@]}")
   OUTPUT="$original_output"
+  # Standalone comparison URLs open directly on the full results page.
+  if [[ ${#original_roots[@]} -eq 1 ]]; then
+    if is_streptavidin_root "${original_roots[0]}" || \
+        [[ "$(basename "${original_roots[0]}")" == betagal_pose_cont ]]; then
+      sed 's|href="../comparisons/|href="comparisons/|g' "$report_file" > "$output_dir/index.html"
+      echo "Pages results written to: $output_dir/index.html"
+      return 0
+    fi
+  fi
   generated_at="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
   if git -C "$SIMPLE_SOURCE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     simple_commit="$(git -C "$SIMPLE_SOURCE_DIR" rev-parse HEAD)"
