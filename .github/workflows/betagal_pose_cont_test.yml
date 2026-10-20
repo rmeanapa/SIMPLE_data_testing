@@ -3,7 +3,7 @@ name: Betagal pose continuation CI
 on:
   push: {}
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '30 0 * * *'
       timezone: America/New_York
   workflow_dispatch:
 
@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   betagal_pose_cont:
-    runs-on: [self-hosted, FRCE_HPC]
+    runs-on: [self-hosted, FRCE_HPC_pose_cont]
     timeout-minutes: 1440
     env:
       SIMPLE_PATH: /home/meanapanedar2/SIMPLE/build
