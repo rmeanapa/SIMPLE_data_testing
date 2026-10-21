@@ -1,7 +1,7 @@
 name: Betagal pose continuation CI
 
 on:
-  push: {}
+  #push: {}
   schedule:
     - cron: '30 0 * * *'
       timezone: America/New_York

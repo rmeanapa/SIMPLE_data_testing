@@ -1,7 +1,7 @@
 name: Streptavidin 100-restart CI
 
 on:
-  push: {}
+  #push: {}
   schedule:
     - cron: '30 0 * * *'
       timezone: America/New_York
