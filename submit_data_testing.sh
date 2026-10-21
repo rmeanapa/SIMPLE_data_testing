@@ -134,7 +134,7 @@ done
 if [[ "$selected_system" == streptavidin ]]; then
 # Each array task owns one solve3D invocation, runtime project and output directory.
 submit_and_wait streptavidin --parsable --partition="$partition" --nodes=1 --ntasks=1 \
-    --array=1-100%20 --cpus-per-task=32 --mem="${SIMPLE_TEST_MEMORY:-32G}" \
+    --array=1-100%17 --cpus-per-task=32 --mem="${SIMPLE_TEST_MEMORY:-32G}" \
     --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
     --job-name=simple-streptavidin --chdir="$run_dir" --export=ALL \
     --output="$run_dir/logs/streptavidin-%A_%a.out" \
