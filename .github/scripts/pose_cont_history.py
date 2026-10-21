@@ -12,6 +12,8 @@ from pathlib import Path, PurePosixPath
 import subprocess
 import sys
 import tempfile
+from urllib.error import URLError
+from urllib.request import Request, build_opener
 import zipfile
 
 
@@ -21,7 +23,19 @@ SOURCE = Path(__file__).resolve().parents[2]
 
 
 def api(endpoint):
-    return subprocess.check_output(["gh", "api", f"repos/{REPO}/{endpoint}"])
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise RuntimeError("Set GH_TOKEN or GITHUB_TOKEN to read Actions history")
+    base = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    request = Request("{}/repos/{}/{}".format(base, REPO, endpoint), headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "SIMPLE-pose-cont-history",
+    })
+    # Artifact downloads redirect to signed storage URLs. Keep the token on
+    # the initial API request, never on the redirected storage request.
+    request.add_unredirected_header("Authorization", "Bearer " + token)
+    with build_opener().open(request, timeout=60) as response:
+        return response.read()
 
 
 def pages(endpoint, key):
@@ -63,14 +77,15 @@ def legacy_metrics(artifacts):
                     target.write_bytes(saved.read(name))
         output = subprocess.check_output(
             ["bash", str(SOURCE / "make_report.sh"), "--pose-cont-metrics", str(root)],
-            text=True)
+            universal_newlines=True)
         return metrics(output)
 
 
 def history_graph(records):
     """Render a small, self-contained SVG without adding runner dependencies."""
     ordered = sorted(records.values(), key=lambda row: row["created_at"])
-    times = [datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")).timestamp()
+    times = [datetime.strptime(row["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+             .replace(tzinfo=timezone.utc).timestamp()
              for row in ordered]
     colors = ("#2563eb", "#d97706", "#15803d")
     esc = lambda value: html.escape(str(value), quote=True)
@@ -220,7 +235,7 @@ def main():
                         row["metrics"] = metrics(saved.read("pose_cont_metrics.tsv").decode())
             if not row.get("metrics") and not records.get(key, {}).get("metrics"):
                 row["metrics"] = legacy_metrics(artifacts)
-        except (subprocess.CalledProcessError, OSError, ValueError, KeyError,
+        except (subprocess.CalledProcessError, OSError, URLError, ValueError, KeyError,
                 zipfile.BadZipFile) as error:
             print(f"::warning::Cannot recover FSC values for successful run {key}: {error}")
         if key not in records or row.get("metrics"):
@@ -235,14 +250,15 @@ def main():
         current = {field: run[field] for field in
                    ("id", "run_number", "run_attempt", "created_at", "head_sha", "html_url")}
         metric_file = site / "pose_cont_metrics.tsv"
-        current["metrics"] = metrics(metric_file.read_text()) if metric_file.exists() else {}
+        current["metrics"] = metrics(metric_file.read_text(encoding="utf-8")) if metric_file.exists() else {}
     (site / "pose_cont_history.json").write_text(json.dumps(
-        {"successful_runs": list(records.values()), "current_run": current}, indent=2) + "\n")
-    (site / "pose_cont_fsc_history.svg").write_text(history_graph(records) + "\n")
+        {"successful_runs": list(records.values()), "current_run": current}, indent=2) + "\n",
+        encoding="utf-8")
+    (site / "pose_cont_fsc_history.svg").write_text(history_graph(records) + "\n", encoding="utf-8")
     fragment = render(records, current)
     for target in (site / "index.html", site / "reports/report_betagal_pose_cont.html"):
         if target.is_file():
-            document = target.read_text()
+            document = target.read_text(encoding="utf-8")
             marker = '<p>SIMPLE test run</p>'
             if marker not in document:
                 raise RuntimeError(f"Report insertion point missing: {target}")
@@ -250,7 +266,7 @@ def main():
             if target.parent.name == "reports":
                 report_fragment = fragment.replace('href="pose_cont_fsc_history.svg"',
                                                    'href="../pose_cont_fsc_history.svg"')
-            target.write_text(document.replace(marker, marker + "\n" + report_fragment, 1))
+            target.write_text(document.replace(marker, marker + "\n" + report_fragment, 1), encoding="utf-8")
     print(f"Reported FSC history for {len(records)} successful Actions runs")
 
 
