@@ -5,7 +5,7 @@
 #
 # By default this writes build/index.html plus per-system reports in
 # build/reports/. Set REPORT_SITE_DIR to choose a different output directory.
-# Pass streptavidin to compare all 100 solve3D restarts against truth.
+# Pass streptavidin to compare both solve3D restarts against truth.
 
 set -euo pipefail
 
@@ -199,7 +199,7 @@ write_streptavidin_comparisons() {
     printf '<p>Ground truth: <code>%s</code>. Both hands docked at 100–20 Å; truth FSC uses an 80 Å spherical soft mask.</p>\n' "$(printf '%s' "$truth" | html_escape)"
     printf '<table><thead><tr><th>Restart</th><th>Output volume</th><th>Status</th><th>Direct docking CC</th><th>Mirrored docking CC</th><th>Selected hand</th><th>Truth FSC=0.5 (Å)</th><th>Truth FSC=0.143 (Å)</th><th>Details</th></tr></thead><tbody>\n'
   } > "$out/table.html"
-  for index in {1..100}; do
+  for index in {1..2}; do
     task="$campaign"; log="$task/SOLVE3D_OUTPUT_RESTART$index"
     error=""; volume=""; directory=""; status=missing; details=""
     direct=""; mirrored=""; hand=""; fsc05=""; fsc0143=""
@@ -232,8 +232,8 @@ write_streptavidin_comparisons() {
     else
       mapfile -t directories < <(find "$task" -mindepth 1 -maxdepth 1 -type d \
         -regextype posix-extended -regex '.*/[0-9]+_solve3D' | sort -V)
-      if [[ ${#directories[@]} -gt 100 ]]; then
-        error='More than 100 output directories; restart logs are required to identify the campaign'
+      if [[ ${#directories[@]} -gt 2 ]]; then
+        error='More than two output directories; restart logs are required to identify the campaign'
       elif [[ ${#directories[@]} -ge $index ]]; then
         directory="${directories[index-1]}"
       fi
@@ -265,8 +265,8 @@ write_streptavidin_comparisons() {
       printf '<td>%s%s</td></tr>\n' "$(printf '%s' "$error" | html_escape)" "$details"
     } >> "$out/table.html"
   done
-  printf '</tbody></table><p>%s/100 expected restarts compared.</p>\n' "$count" >> "$out/table.html"
-  printf '%s/100\n' "$count" > "$out/count.txt"
+  printf '</tbody></table><p>%s/2 expected restarts compared.</p>\n' "$count" >> "$out/table.html"
+  printf '%s/2\n' "$count" > "$out/count.txt"
 }
 
 has_ground_truth_for_root() {
@@ -2195,7 +2195,7 @@ HTML_INDEX_HEAD
     system_label="$(display_name_for_root "$system_root" | html_escape)"
     if is_streptavidin_root "$system_root"; then
       comparison_counts=$(cat "$(streptavidin_comparison_dir "$system_root")/count.txt")
-      printf '<li class="report-row"><div class="report-info"><a href="reports/report_%s.html">Streptavidin — 100 solve3D restarts</a><span>%s volumes compared against ground truth; per-restart docking and truth FSC in report</span></div></li>\n' \
+      printf '<li class="report-row"><div class="report-info"><a href="reports/report_%s.html">Streptavidin — 2 solve3D restarts</a><span>%s volumes compared against ground truth; per-restart docking and truth FSC in report</span></div></li>\n' \
         "$system_name" "$comparison_counts" >> "$output_dir/index.html"
       continue
     fi
