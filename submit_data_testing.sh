@@ -134,7 +134,7 @@ done
 if [[ "$selected_system" == streptavidin ]]; then
 # Each array task owns one solve3D invocation, runtime project and output directory.
 submit_and_wait streptavidin --parsable --partition="$partition" --nodes=1 --ntasks=1 \
-    --array=1-2 --cpus-per-task=80 --mem="${SIMPLE_TEST_MEMORY:-128G}" \
+    --array=1-100%20 --cpus-per-task=32 --mem="${SIMPLE_TEST_MEMORY:-32G}" \
     --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
     --job-name=simple-streptavidin --chdir="$run_dir" --export=ALL \
     --output="$run_dir/logs/streptavidin-%A_%a.out" \
@@ -149,7 +149,7 @@ mkdir "$task_dir"
 export STREPTAVIDIN_RUN_DIR="$task_dir" STREPTAVIDIN_RESTARTS=1
 export PATH="$SIMPLE_PATH/bin:$SIMPLE_PATH/scripts:$PATH"
 export SIMPLE_QSYS=local
-export OMP_NUM_THREADS=14 OMP_THREAD_LIMIT=128 OMP_WAIT_POLICY=PASSIVE OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=4 OMP_THREAD_LIMIT=32 OMP_WAIT_POLICY=PASSIVE OPENBLAS_NUM_THREADS=1
 # Separate reproducible starting draws even when all tasks start simultaneously.
 export SIMPLE_SEED=$((20261020 + SLURM_ARRAY_TASK_ID))
 echo "Job $SLURM_ARRAY_JOB_ID task $SLURM_ARRAY_TASK_ID host $(hostname) seed $SIMPLE_SEED"

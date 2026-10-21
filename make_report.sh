@@ -5,7 +5,7 @@
 #
 # By default this writes build/index.html plus per-system reports in
 # build/reports/. Set REPORT_SITE_DIR to choose a different output directory.
-# Pass streptavidin to compare both solve3D restarts against truth.
+# Pass streptavidin to compare all 100 solve3D restarts against truth.
 
 set -euo pipefail
 
@@ -175,9 +175,14 @@ streptavidin_compare() (
   printf '%s|%s|%s|%s|%s\n' "$direct" "$mirrored" "$hand" "$fsc05" "$fsc0143"
 )
 
+resolution_above_limit() {
+  [[ -n "$1" ]] && awk -v value="$1" -v limit="$FINAL_RESOLUTION_THRESHOLD_ANGSTROM" \
+    'BEGIN { exit !(value > limit) }'
+}
+
 write_streptavidin_comparisons() {
   local root="$1" out truth campaign task log directory volume error status metrics work index count=0
-  local direct mirrored hand fsc05 fsc0143 details name
+  local direct mirrored hand fsc05 fsc0143 details name row_class metric_class
   local directories=() candidates=() tasks=("$1"/restart_[0-9]*)
   out=$(streptavidin_comparison_dir "$root")
   mkdir -p "$out"
@@ -197,9 +202,10 @@ write_streptavidin_comparisons() {
   {
     printf '<h2>Streptavidin: all restart volumes against ground truth</h2>\n'
     printf '<p>Ground truth: <code>%s</code>. Both hands docked at 100–20 Å; truth FSC uses an 80 Å spherical soft mask.</p>\n' "$(printf '%s' "$truth" | html_escape)"
+    printf '<p>Red FSC values exceed the resolution limit of <strong>%s Å</strong> (higher is worse). Red rows also identify failed or missing runs. These highlights do not change the run status.</p>\n' "$FINAL_RESOLUTION_THRESHOLD_ANGSTROM"
     printf '<table><thead><tr><th>Restart</th><th>Output volume</th><th>Status</th><th>Direct docking CC</th><th>Mirrored docking CC</th><th>Selected hand</th><th>Truth FSC=0.5 (Å)</th><th>Truth FSC=0.143 (Å)</th><th>Details</th></tr></thead><tbody>\n'
   } > "$out/table.html"
-  for index in {1..2}; do
+  for index in {1..100}; do
     task="$campaign"; log="$task/SOLVE3D_OUTPUT_RESTART$index"
     error=""; volume=""; directory=""; status=missing; details=""
     direct=""; mirrored=""; hand=""; fsc05=""; fsc0143=""
@@ -232,8 +238,8 @@ write_streptavidin_comparisons() {
     else
       mapfile -t directories < <(find "$task" -mindepth 1 -maxdepth 1 -type d \
         -regextype posix-extended -regex '.*/[0-9]+_solve3D' | sort -V)
-      if [[ ${#directories[@]} -gt 2 ]]; then
-        error='More than two output directories; restart logs are required to identify the campaign'
+      if [[ ${#directories[@]} -gt 100 ]]; then
+        error='More than 100 output directories; restart logs are required to identify the campaign'
       elif [[ ${#directories[@]} -ge $index ]]; then
         directory="${directories[index-1]}"
       fi
@@ -257,16 +263,38 @@ write_streptavidin_comparisons() {
     fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$index" "$volume" "$status" \
       "$direct" "$mirrored" "$hand" "$fsc05" "$fsc0143" "${error//$'\t'/ }" >> "$out/results.tsv"
+    row_class=""
+    if [[ "$status" != compared ]]; then
+      row_class=comparison-failed
+    elif resolution_above_limit "$fsc05" || resolution_above_limit "$fsc0143"; then
+      row_class=comparison-outlier
+    fi
     {
-      printf '<tr><td>%s</td><td>%s</td><td>%s</td>' "$index" "$(printf '%s' "$volume" | html_escape)" "$status"
-      for metrics in "$direct" "$mirrored" "$hand" "$fsc05" "$fsc0143"; do
+      printf '<tr class="%s"><td>%s</td><td>' "$row_class" "$index"
+      if [[ -n "$volume" ]]; then
+        printf '<details class="volume-path"><summary>Show path</summary><code>%s</code></details>' \
+          "$(printf '%s' "$volume" | html_escape)"
+      else
+        html_metric_value ""
+      fi
+      printf '</td><td>%s' "$status"
+      if [[ "$row_class" == comparison-outlier ]]; then
+        printf ' <strong class="comparison-flag">Above limit</strong>'
+      fi
+      printf '</td>'
+      for metrics in "$direct" "$mirrored" "$hand"; do
         printf '<td>%s</td>' "$(html_metric_value "$metrics")"
+      done
+      for metrics in "$fsc05" "$fsc0143"; do
+        metric_class=""
+        if resolution_above_limit "$metrics"; then metric_class=comparison-flag; fi
+        printf '<td class="%s">%s</td>' "$metric_class" "$(html_metric_value "$metrics")"
       done
       printf '<td>%s%s</td></tr>\n' "$(printf '%s' "$error" | html_escape)" "$details"
     } >> "$out/table.html"
   done
-  printf '</tbody></table><p>%s/2 expected restarts compared.</p>\n' "$count" >> "$out/table.html"
-  printf '%s/2\n' "$count" > "$out/count.txt"
+  printf '</tbody></table><p>%s/100 expected restarts compared.</p>\n' "$count" >> "$out/table.html"
+  printf '%s/100\n' "$count" > "$out/count.txt"
 }
 
 has_ground_truth_for_root() {
@@ -1929,6 +1957,10 @@ write_report_html() {
     }
     table { border-collapse: collapse; width: 100%; font-size: 13px; }
     th, td { border: 1px solid #ddd; padding: 6px; text-align: left; overflow-wrap: anywhere; }
+    .comparison-outlier, .comparison-failed { background: #fff1f2; }
+    .comparison-flag, .comparison-failed td:nth-child(3) { color: #b91c1c; font-weight: 700; }
+    .volume-path summary { cursor: pointer; color: #2563eb; white-space: nowrap; }
+    .volume-path[open] code { display: block; max-width: 32rem; margin-top: 6px; overflow-wrap: anywhere; }
     .card span { font-size: 12px; color: #666; word-break: break-all; }
     .log-tail {
       background: #111827;
@@ -2195,7 +2227,7 @@ HTML_INDEX_HEAD
     system_label="$(display_name_for_root "$system_root" | html_escape)"
     if is_streptavidin_root "$system_root"; then
       comparison_counts=$(cat "$(streptavidin_comparison_dir "$system_root")/count.txt")
-      printf '<li class="report-row"><div class="report-info"><a href="reports/report_%s.html">Streptavidin — 2 solve3D restarts</a><span>%s volumes compared against ground truth; per-restart docking and truth FSC in report</span></div></li>\n' \
+      printf '<li class="report-row"><div class="report-info"><a href="reports/report_%s.html">Streptavidin — 100 solve3D restarts</a><span>%s volumes compared against ground truth; per-restart docking and truth FSC in report</span></div></li>\n' \
         "$system_name" "$comparison_counts" >> "$output_dir/index.html"
       continue
     fi

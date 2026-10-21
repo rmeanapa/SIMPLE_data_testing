@@ -1,4 +1,4 @@
-name: Streptavidin 2-restart CI
+name: Streptavidin 100-restart CI
 
 on:
   push: {}
@@ -22,7 +22,7 @@ jobs:
       RUN_DIR: ${{ github.workspace }}/ci_runs/${{ github.run_id }}_${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
-      - name: Run 2 streptavidin reconstructions
+      - name: Run 100 streptavidin reconstructions
         run: |
           mkdir -p "$RUN_DIR"
           cd "$RUN_DIR"
