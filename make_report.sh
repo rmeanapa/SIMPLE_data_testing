@@ -9,6 +9,13 @@
 
 set -euo pipefail
 
+# Used when backfilling historical Actions logs; share the report's FSC parser.
+pose_metrics_only=0
+if [[ ${1:-} == --pose-cont-metrics ]]; then
+  pose_metrics_only=1
+  shift
+fi
+
 PAGES_OUTPUT_DIR="${REPORT_SITE_DIR:-build}"
 SIMPLE_SOURCE_DIR="${SIMPLE_SOURCE_DIR:-/home/meanapanedar2/SIMPLE}"
 
@@ -253,6 +260,7 @@ write_streptavidin_comparisons() {
     printf -v work '%s/restart_%02d' "$out" "$index"
     if [[ -z "$error" ]]; then
       mkdir -p "$work"
+      printf 'Streptavidin restart %d/100: comparing against ground truth...\n' "$index"
       if metrics=$(streptavidin_compare "$volume" "$truth" "$work"); then
         IFS='|' read -r direct mirrored hand fsc05 fsc0143 <<< "$metrics"
         status=compared; count=$((count+1))
@@ -263,6 +271,7 @@ write_streptavidin_comparisons() {
     fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$index" "$volume" "$status" \
       "$direct" "$mirrored" "$hand" "$fsc05" "$fsc0143" "${error//$'\t'/ }" >> "$out/results.tsv"
+    printf 'Streptavidin restart %d/100: %s\n' "$index" "$status"
     row_class=""
     if [[ "$status" != compared ]]; then
       row_class=comparison-failed
@@ -2423,4 +2432,26 @@ HTML_INDEX_FOOT
   echo "Pages index written to: $output_dir/index.html"
 }
 
+write_pose_cont_metrics() {
+  local arm metrics fsc05 fsc0143 remainder
+  printf 'arm\tfsc05\tfsc0143\n'
+  for arm in default yes only; do
+    local roots=("${SYSTEM_ROOTS[0]}"/*_refine3D_auto_pose_cont_"$arm")
+    if [[ ${#roots[@]} -ne 1 || ! -f "${roots[0]}/LOG" ]]; then
+      printf '%s\t\t\n' "$arm"
+      continue
+    fi
+    metrics=$(ROOT="${roots[0]}" final_volume_metrics_for_root || true)
+    IFS='|' read -r fsc05 fsc0143 remainder <<< "$metrics"
+    printf '%s\t%s\t%s\n' "$arm" "$fsc05" "$fsc0143"
+  done
+}
+
+if [[ $pose_metrics_only -eq 1 ]]; then
+  write_pose_cont_metrics
+  exit 0
+fi
 write_pages_site "$PAGES_OUTPUT_DIR"
+if [[ ${#SYSTEM_ROOTS[@]} -eq 1 && $(basename "${SYSTEM_ROOTS[0]}") == betagal_pose_cont ]]; then
+  write_pose_cont_metrics > "$PAGES_OUTPUT_DIR/pose_cont_metrics.tsv"
+fi

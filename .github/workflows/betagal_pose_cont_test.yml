@@ -30,6 +30,12 @@ jobs:
       - name: Generate betagal_pose_cont report
         if: always()
         run: REPORT_SITE_DIR="$RUN_DIR/betagal_pose_cont/site" bash ./make_report.sh "$RUN_DIR/betagal_pose_cont"
+      - name: Add successful Actions history to the report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python3 .github/scripts/pose_cont_history.py "$RUN_DIR/betagal_pose_cont/site"
       - name: Upload logs and comparison report
         if: always()
         uses: actions/upload-artifact@v4
