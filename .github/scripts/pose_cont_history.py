@@ -2,9 +2,11 @@
 """Add successful pose-continuation Actions history to the existing HTML report."""
 
 import csv
+from datetime import datetime, timezone
 import html
 import io
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import subprocess
@@ -65,12 +67,103 @@ def legacy_metrics(artifacts):
         return metrics(output)
 
 
+def history_graph(records):
+    """Render a small, self-contained SVG without adding runner dependencies."""
+    ordered = sorted(records.values(), key=lambda row: row["created_at"])
+    times = [datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")).timestamp()
+             for row in ordered]
+    colors = ("#2563eb", "#d97706", "#15803d")
+    esc = lambda value: html.escape(str(value), quote=True)
+    out = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 330" '
+           'role="img" aria-labelledby="fsc-trend-title fsc-trend-desc" '
+           'style="display:block;width:100%;max-width:820px;height:auto;background:white">',
+           '<title id="fsc-trend-title">FSC resolution over time</title>',
+           '<desc id="fsc-trend-desc">Two plots show resolution at FSC 0.5 and 0.143 '
+           'for successful Actions runs. Lower resolution in Angstrom is better. '
+           'Missing values interrupt lines. Each point links to its Actions run.</desc>',
+           '<g font-family="sans-serif" font-size="11" fill="#374151">',
+           '<text x="12" y="18" font-size="14">FSC resolution over time — lower is better</text>']
+    for index, arm in enumerate(ARMS):
+        x = 460 + 110 * index
+        out.append(f'<line x1="{x}" y1="14" x2="{x+22}" y2="14" '
+                   f'stroke="{colors[index]}" stroke-width="2" '
+                   f'stroke-dasharray="{("none", "6 3", "2 3")[index]}"/>'
+                   f'<text x="{x+28}" y="18">{arm}</text>')
+    for panel, (key, criterion) in enumerate((("fsc05", "0.5"), ("fsc0143", "0.143"))):
+        left, top, width, height = 62 + panel * 410, 60, 325, 205
+        out.append(f'<text x="{left}" y="44" font-size="13">FSC={criterion} (Å)</text>')
+        series = []
+        for arm in ARMS:
+            values = []
+            for row in ordered:
+                try:
+                    value = float(row.get("metrics", {}).get(arm, {}).get(key))
+                    values.append(value if math.isfinite(value) and value > 0 else None)
+                except (TypeError, ValueError):
+                    values.append(None)
+            series.append(values)
+        valid = [value for values in series for value in values if value is not None]
+        if not valid:
+            out.append(f'<text x="{left+30}" y="{top+100}">No successful FSC values available</text>')
+            continue
+        low, high = min(valid), max(valid)
+        padding = max((high - low) * 0.15, high * 0.005, 0.01)
+        low, high = max(0, low - padding), high + padding
+        span = times[-1] - times[0]
+        xs = [left + width * (stamp - times[0]) / span if span else left + width / 2
+              for stamp in times]
+        for tick in range(5):
+            value = low + (high - low) * tick / 4
+            y = top + height * (1 - tick / 4)
+            out.append(f'<line x1="{left}" y1="{y:.2f}" x2="{left+width}" y2="{y:.2f}" '
+                       f'stroke="#e5e7eb"/><text x="{left-8}" y="{y+4:.2f}" '
+                       f'text-anchor="end">{value:.3f}</text>')
+        out.append(f'<path d="M {left} {top} V {top+height} H {left+width}" '
+                   'fill="none" stroke="#9ca3af"/>')
+        for tick in range(3 if span else 1):
+            fraction = tick / 2 if span else 0.5
+            x = left + width * fraction
+            stamp = times[0] + span * fraction
+            label = datetime.fromtimestamp(stamp, timezone.utc).strftime("%Y-%m-%d %H:%M")
+            anchor = "start" if fraction == 0 else "end" if fraction == 1 else "middle"
+            out.append(f'<text x="{x:.2f}" y="{top+height+20}" text-anchor="{anchor}" '
+                       f'font-size="9">{label}</text>')
+        out.append(f'<text x="{left+width/2}" y="315" text-anchor="middle">Run started (UTC)</text>')
+        for index, values in enumerate(series):
+            previous = None
+            for row, x, value in zip(ordered, xs, values):
+                if value is None:
+                    previous = None
+                    continue
+                y = top + height * (high - value) / (high - low)
+                if previous is not None:
+                    out.append(f'<line x1="{previous[0]:.2f}" y1="{previous[1]:.2f}" '
+                               f'x2="{x:.2f}" y2="{y:.2f}" stroke="{colors[index]}" '
+                               f'stroke-width="2" stroke-dasharray="{("none", "6 3", "2 3")[index]}"/>')
+                previous = (x, y)
+                title = (f'Run #{row["run_number"]}, {ARMS[index]}, '
+                         f'{row["created_at"]}: FSC={criterion} at {value:g} Å')
+                out.append(f'<a href="{esc(row["html_url"])}"><title>{esc(title)}</title>')
+                # Different marker sizes/shapes keep identical arm values visible.
+                if index == 0:
+                    marker = f'<circle cx="{x:.2f}" cy="{y:.2f}" r="6"'
+                elif index == 1:
+                    marker = f'<rect x="{x-4:.2f}" y="{y-4:.2f}" width="8" height="8"'
+                else:
+                    marker = f'<path d="M {x:.2f} {y-3:.2f} L {x-3:.2f} {y+3:.2f} L {x+3:.2f} {y+3:.2f} Z"'
+                out.append(marker + f' fill="white" stroke="{colors[index]}" stroke-width="1.5"/></a>')
+    out.append('</g></svg>')
+    return "\n".join(out)
+
+
 def render(records, current):
     esc = lambda value: html.escape(str(value), quote=True)
     out = ['<section id="pose-cont-history"><h2>Successful Actions history</h2>',
            '<p>Final resolution in Å (lower is better). Each arm uses its final logged '
            'FSC estimate. Missing results are shown explicitly. The current run is '
            'listed separately until GitHub confirms success.</p>',
+           history_graph(records),
+           '<p><a href="pose_cont_fsc_history.svg" download>Download graph (SVG)</a></p>',
            '<div style="overflow-x:auto"><table><thead><tr><th>Run / attempt</th>'
            '<th>Started (UTC)</th><th>Commit</th><th>Comparison</th>'
            '<th>FSC=0.5 (Å)</th><th>FSC=0.143 (Å)</th></tr></thead><tbody>']
@@ -145,6 +238,7 @@ def main():
         current["metrics"] = metrics(metric_file.read_text()) if metric_file.exists() else {}
     (site / "pose_cont_history.json").write_text(json.dumps(
         {"successful_runs": list(records.values()), "current_run": current}, indent=2) + "\n")
+    (site / "pose_cont_fsc_history.svg").write_text(history_graph(records) + "\n")
     fragment = render(records, current)
     for target in (site / "index.html", site / "reports/report_betagal_pose_cont.html"):
         if target.is_file():
@@ -152,7 +246,11 @@ def main():
             marker = '<p>SIMPLE test run</p>'
             if marker not in document:
                 raise RuntimeError(f"Report insertion point missing: {target}")
-            target.write_text(document.replace(marker, marker + "\n" + fragment, 1))
+            report_fragment = fragment
+            if target.parent.name == "reports":
+                report_fragment = fragment.replace('href="pose_cont_fsc_history.svg"',
+                                                   'href="../pose_cont_fsc_history.svg"')
+            target.write_text(document.replace(marker, marker + "\n" + report_fragment, 1))
     print(f"Reported FSC history for {len(records)} successful Actions runs")
 
 
