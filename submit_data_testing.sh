@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Submit the normal datasets, or one independent dataset campaign.
-# Usage: bash ./submit_data_testing.sh [streptavidin|betagal_pose_cont] [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]
+# Usage: bash ./submit_data_testing.sh [streptavidin|betagal_pose_cont|streptavidin_pose_errors] [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]
 # Defaults: checkout containing this script, SIMPLE_BUILD=$SIMPLE_PATH.
 # Dataset scripts run in the current directory; results, logs and jobs.txt stay there.
 # Load the SIMPLE runtime modules before submission; Slurm inherits this environment.
@@ -14,10 +14,10 @@ set -euo pipefail
 
 selected_system=""
 case "${1:-}" in
-    streptavidin|betagal_pose_cont) selected_system=$1; shift ;;
+    streptavidin|betagal_pose_cont|streptavidin_pose_errors) selected_system=$1; shift ;;
 esac
 if (( $# > 2 )); then
-    echo "Usage: $0 [streptavidin|betagal_pose_cont] [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]" >&2
+    echo "Usage: $0 [streptavidin|betagal_pose_cont|streptavidin_pose_errors] [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]" >&2
     exit 2
 fi
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
@@ -39,6 +39,13 @@ fi
 if [[ "$selected_system" == streptavidin ]]; then
     systems=()
     [[ -r "$data_checkout/streptav4.sh" ]] || { echo "Missing $data_checkout/streptav4.sh" >&2; exit 1; }
+fi
+if [[ "$selected_system" == streptavidin_pose_errors ]]; then
+    systems=()
+    for script in streptav4_pose_errors.sh perturb_project_poses.sh; do
+        [[ -r "$data_checkout/$script" ]] || { echo "Missing $data_checkout/$script" >&2; exit 1; }
+    done
+    [[ ! -e "$PWD/streptavidin_pose_errors" ]] || { echo 'Pose-error campaign already exists.' >&2; exit 1; }
 fi
 for system in "${systems[@]}"; do
     [[ -r "$data_checkout/$system.sh" ]] || { echo "Missing $data_checkout/$system.sh" >&2; exit 1; }
@@ -166,6 +173,28 @@ fi
 SBATCH
 wait_pids+=("$!")
 wait_labels+=(streptavidin)
+fi
+
+if [[ "$selected_system" == streptavidin_pose_errors ]]; then
+submit_and_wait streptavidin_pose_errors --parsable --partition="$partition" --nodes=1 --ntasks=1 \
+    --cpus-per-task=32 --mem="${SIMPLE_TEST_MEMORY:-32G}" \
+    --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
+    --job-name=simple-streptavidin-pose-errors --chdir="$run_dir" --export=ALL \
+    --output="$run_dir/logs/streptavidin_pose_errors-%j.out" \
+    --error="$run_dir/logs/streptavidin_pose_errors-%j.err" \
+    /dev/stdin "$data_checkout" "$simple_build" "$run_dir/streptavidin_pose_errors" <<'SBATCH' &
+#!/usr/bin/env bash
+set -euo pipefail
+checkout=$1
+export SIMPLE_PATH=$2
+export simple_exec="$SIMPLE_PATH/bin/simple_exec"
+export PATH="$SIMPLE_PATH/bin:$SIMPLE_PATH/scripts:$PATH"
+export SIMPLE_QSYS=local SIMPLE_SEED="${SIMPLE_SEED:-20261022}"
+export STREPTAVIDIN_POSE_NPARTS=8 STREPTAVIDIN_POSE_NTHR=4
+exec bash "$checkout/streptav4_pose_errors.sh" "$3"
+SBATCH
+wait_pids+=("$!")
+wait_labels+=(streptavidin_pose_errors)
 fi
 
 echo "Waiting for all ${#wait_pids[@]} Slurm jobs to finish..."

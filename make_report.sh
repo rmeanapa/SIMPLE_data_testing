@@ -6,6 +6,7 @@
 # By default this writes build/index.html plus per-system reports in
 # build/reports/. Set REPORT_SITE_DIR to choose a different output directory.
 # Pass streptavidin to compare all 100 solve3D restarts against truth.
+# A streptavidin_pose_errors campaign compares its three refined maps against truth.
 
 set -euo pipefail
 
@@ -98,7 +99,7 @@ display_name_for_root() {
 
 is_streptavidin_root() {
   case "$(basename "$1")" in
-    streptavidin|streptav4|streptavin) return 0 ;;
+    streptavidin|streptav4|streptavin|streptavidin_pose_errors) return 0 ;;
   esac
   [[ -f "$1/8_select_particles/streptav4.simple" ]]
 }
@@ -191,6 +192,14 @@ write_streptavidin_comparisons() {
   local root="$1" out truth campaign task log directory volume error status metrics work index count=0
   local direct mirrored hand fsc05 fsc0143 details name row_class metric_class
   local directories=() candidates=() tasks=("$1"/restart_[0-9]*)
+  local indices=({1..100}) expected=100 case_label=restart first_heading=Restart row_label
+  local volume_names=(rec_final_state01.mrc recvol_state01.mrc)
+  local pose_errors=0 manifest_status expected_label=restarts
+  if [[ $(basename "$root") == streptavidin_pose_errors ]]; then
+    pose_errors=1; indices=(5 10 15); expected=3; case_label='pose-error case'
+    volume_names=(rec_final_state01.mrc); expected_label=cases
+    first_heading='Maximum angular error / positive x,y error'
+  fi
   out=$(streptavidin_comparison_dir "$root")
   mkdir -p "$out"
   out=$(cd "$out" && pwd -P)
@@ -205,62 +214,94 @@ write_streptavidin_comparisons() {
       ! compgen -G "$root/*_solve3D" > /dev/null && [[ -d "$root/8_select_particles" ]]; then
     campaign="$root/8_select_particles"
   fi
-  printf 'restart\tvolume\tstatus\tdirect_cc\tmirrored_cc\thand\tfsc05\tfsc0143\terror\n' > "$out/results.tsv"
+  if (( pose_errors )); then printf 'angle_max_deg'; else printf 'restart'; fi > "$out/results.tsv"
+  printf '\tvolume\tstatus\tdirect_cc\tmirrored_cc\thand\tfsc05\tfsc0143\terror\n' >> "$out/results.tsv"
   {
-    printf '<h2>Streptavidin: all restart volumes against ground truth</h2>\n'
+    if (( pose_errors )); then
+      printf '<h2>Streptavidin: pose perturbations against ground truth</h2>\n'
+      printf '<p>Independent random errors: each Euler coordinate up to ±5°, ±10° or ±15°; each x/y shift from 0 to 5, 10 or 15 pixels. Each case starts from the same original project. The reference is used only for evaluation.</p>\n'
+    else
+      printf '<h2>Streptavidin: all restart volumes against ground truth</h2>\n'
+    fi
     printf '<p>Ground truth: <code>%s</code>. Both hands docked at 100–20 Å; truth FSC uses an 80 Å spherical soft mask.</p>\n' "$(printf '%s' "$truth" | html_escape)"
     printf '<p>Red FSC values exceed the resolution limit of <strong>%s Å</strong> (higher is worse). Red rows also identify failed or missing runs. These highlights do not change the run status.</p>\n' "$FINAL_RESOLUTION_THRESHOLD_ANGSTROM"
-    printf '<table><thead><tr><th>Restart</th><th>Output volume</th><th>Status</th><th>Direct docking CC</th><th>Mirrored docking CC</th><th>Selected hand</th><th>Truth FSC=0.5 (Å)</th><th>Truth FSC=0.143 (Å)</th><th>Details</th></tr></thead><tbody>\n'
+    printf '<table><thead><tr><th>%s</th><th>Output volume</th><th>Status</th><th>Direct docking CC</th><th>Mirrored docking CC</th><th>Selected hand</th><th>Truth FSC=0.5 (Å)</th><th>Truth FSC=0.143 (Å)</th><th>Details</th></tr></thead><tbody>\n' "$first_heading"
   } > "$out/table.html"
-  for index in {1..100}; do
+  for index in "${indices[@]}"; do
     task="$campaign"; log="$task/SOLVE3D_OUTPUT_RESTART$index"
     error=""; volume=""; directory=""; status=missing; details=""
     direct=""; mirrored=""; hand=""; fsc05=""; fsc0143=""
-    if [[ -d "${tasks[0]}" ]]; then
+    row_label="$index"
+    if (( pose_errors )); then
+      row_label="±$index° / 0–$index px"
+      mapfile -t candidates < <(compgen -G "$root/*_refine3D_auto_pose_error_$index" | sort)
+      if [[ ${#candidates[@]} != 1 || ! -d ${candidates[0]} ]]; then
+        error='Missing or ambiguous refinement directory'
+      else
+        directory=${candidates[0]}; log="$directory/LOG"
+        if [[ ! -f "$log" ]]; then
+          error='Missing refinement log'
+        elif grep -qE '^ERROR!|ERROR STOP' "$log"; then
+          error='Refinement log reports an error'; status=failed
+        elif ! grep -q 'SIMPLE_REFINE3D NORMAL STOP' "$log"; then
+          error='No successful refinement completion marker'
+        fi
+        manifest_status=$(awk -F '\t' -v level="$index" '$1==level {print $4; exit}' "$root/runs.tsv" 2>/dev/null || true)
+        if [[ $manifest_status != PASS && -z $error ]]; then
+          error="Refinement manifest status: ${manifest_status:-missing}"; status=failed
+        fi
+      fi
+    elif [[ -d "${tasks[0]}" ]]; then
       printf -v task '%s/restart_%02d' "$root" "$index"
       log="$task/SOLVE3D_OUTPUT_RESTART1"
       [[ -d "$task" ]] || error='Slurm restart output directory missing'
     fi
-    if [[ -f "$log" ]]; then
-      mapfile -t candidates < <(awk '/^[[:space:]]*>>> EXECUTION DIRECTORY:/ {
-        sub(/^[[:space:]]*>>> EXECUTION DIRECTORY:[[:space:]]*/, ""); sub(/[[:space:]]+$/, "")
-        name=$0; sub(/^.*\//, "", name); if(name ~ /^[0-9]+_solve3D$/) print
-      }' "$log" | sort -u)
-      if [[ ${#candidates[@]} -eq 1 ]]; then
-        directory="${candidates[0]}"
-        [[ "$directory" == /* ]] || directory="$task/$directory"
-        directory=$(realpath -m -- "$directory")
-        [[ "${directory%/*}" == "$task" ]] || error='Restart log points outside this dataset directory'
+    if (( ! pose_errors )); then
+      if [[ -f "$log" ]]; then
+        mapfile -t candidates < <(awk '/^[[:space:]]*>>> EXECUTION DIRECTORY:/ {
+          sub(/^[[:space:]]*>>> EXECUTION DIRECTORY:[[:space:]]*/, ""); sub(/[[:space:]]+$/, "")
+          name=$0; sub(/^.*\//, "", name); if(name ~ /^[0-9]+_solve3D$/) print
+        }' "$log" | sort -u)
+        if [[ ${#candidates[@]} -eq 1 ]]; then
+          directory="${candidates[0]}"
+          [[ "$directory" == /* ]] || directory="$task/$directory"
+          directory=$(realpath -m -- "$directory")
+          [[ "${directory%/*}" == "$task" ]] || error='Restart log points outside this dataset directory'
+        else
+          error='Restart log has no unique outer solve3D directory'
+        fi
+        if grep -qE '^ERROR!|ERROR STOP' "$log"; then
+          error=$(awk '/^ERROR!/ {print; exit}' "$log")
+          error="${error:-Restart log reports ERROR STOP}"; status=failed
+        elif ! grep -q 'SIMPLE_SOLVE3D NORMAL STOP' "$log"; then
+          error='Restart has no successful solve3D completion marker'
+        fi
+      elif compgen -G "$task/SOLVE3D_OUTPUT_RESTART*" > /dev/null || [[ -d "${tasks[0]}" ]]; then
+        error="${error:-Missing restart log}"
       else
-        error='Restart log has no unique outer solve3D directory'
-      fi
-      if grep -qE '^ERROR!|ERROR STOP' "$log"; then
-        error=$(awk '/^ERROR!/ {print; exit}' "$log")
-        error="${error:-Restart log reports ERROR STOP}"; status=failed
-      elif ! grep -q 'SIMPLE_SOLVE3D NORMAL STOP' "$log"; then
-        error='Restart has no successful solve3D completion marker'
-      fi
-    elif compgen -G "$task/SOLVE3D_OUTPUT_RESTART*" > /dev/null || [[ -d "${tasks[0]}" ]]; then
-      error="${error:-Missing restart log}"
-    else
-      mapfile -t directories < <(find "$task" -mindepth 1 -maxdepth 1 -type d \
-        -regextype posix-extended -regex '.*/[0-9]+_solve3D' | sort -V)
-      if [[ ${#directories[@]} -gt 100 ]]; then
-        error='More than 100 output directories; restart logs are required to identify the campaign'
-      elif [[ ${#directories[@]} -ge $index ]]; then
-        directory="${directories[index-1]}"
+        mapfile -t directories < <(find "$task" -mindepth 1 -maxdepth 1 -type d \
+          -regextype posix-extended -regex '.*/[0-9]+_solve3D' | sort -V)
+        if [[ ${#directories[@]} -gt 100 ]]; then
+          error='More than 100 output directories; restart logs are required to identify the campaign'
+        elif [[ ${#directories[@]} -ge $index ]]; then
+          directory="${directories[index-1]}"
+        fi
       fi
     fi
     if [[ -z "$error" ]]; then
-      for name in rec_final_state01.mrc recvol_state01.mrc; do
+      for name in "${volume_names[@]}"; do
         if [[ -n "$directory" && -f "$directory/$name" ]]; then volume="$directory/$name"; break; fi
       done
       if [[ -z "$volume" ]]; then error='Final volume not found'; fi
     fi
-    printf -v work '%s/restart_%02d' "$out" "$index"
+    if (( pose_errors )); then
+      printf -v work '%s/pose_error_%02d' "$out" "$index"
+    else
+      printf -v work '%s/restart_%02d' "$out" "$index"
+    fi
     if [[ -z "$error" ]]; then
       mkdir -p "$work"
-      printf 'Streptavidin restart %d/100: comparing against ground truth...\n' "$index"
+      printf 'Streptavidin %s %d: comparing against ground truth...\n' "$case_label" "$index"
       if metrics=$(streptavidin_compare "$volume" "$truth" "$work"); then
         IFS='|' read -r direct mirrored hand fsc05 fsc0143 <<< "$metrics"
         status=compared; count=$((count+1))
@@ -271,7 +312,7 @@ write_streptavidin_comparisons() {
     fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$index" "$volume" "$status" \
       "$direct" "$mirrored" "$hand" "$fsc05" "$fsc0143" "${error//$'\t'/ }" >> "$out/results.tsv"
-    printf 'Streptavidin restart %d/100: %s\n' "$index" "$status"
+    printf 'Streptavidin %s %d: %s\n' "$case_label" "$index" "$status"
     row_class=""
     if [[ "$status" != compared ]]; then
       row_class=comparison-failed
@@ -279,7 +320,7 @@ write_streptavidin_comparisons() {
       row_class=comparison-outlier
     fi
     {
-      printf '<tr class="%s"><td>%s</td><td>' "$row_class" "$index"
+      printf '<tr class="%s"><td>%s</td><td>' "$row_class" "$row_label"
       if [[ -n "$volume" ]]; then
         printf '<details class="volume-path"><summary>Show path</summary><code>%s</code></details>' \
           "$(printf '%s' "$volume" | html_escape)"
@@ -302,8 +343,8 @@ write_streptavidin_comparisons() {
       printf '<td>%s%s</td></tr>\n' "$(printf '%s' "$error" | html_escape)" "$details"
     } >> "$out/table.html"
   done
-  printf '</tbody></table><p>%s/100 expected restarts compared.</p>\n' "$count" >> "$out/table.html"
-  printf '%s/100\n' "$count" > "$out/count.txt"
+  printf '</tbody></table><p>%s/%s expected %s compared.</p>\n' "$count" "$expected" "$expected_label" >> "$out/table.html"
+  printf '%s/%s\n' "$count" "$expected" > "$out/count.txt"
 }
 
 has_ground_truth_for_root() {
@@ -1674,7 +1715,7 @@ append_system_report() {
   system_label=$(display_name_for_root "$ROOT")
 
   if is_streptavidin_root "$system_root"; then
-    printf '<section class="system-report"><h1>Streptavidin restart comparisons</h1>\n' >> "$OUTPUT"
+    printf '<section class="system-report"><h1>Streptavidin ground-truth comparisons</h1>\n' >> "$OUTPUT"
     cat "$(streptavidin_comparison_dir "$system_root")/table.html" >> "$OUTPUT"
     printf '</section>\n' >> "$OUTPUT"
     return 0
@@ -2236,6 +2277,11 @@ HTML_INDEX_HEAD
     system_label="$(display_name_for_root "$system_root" | html_escape)"
     if is_streptavidin_root "$system_root"; then
       comparison_counts=$(cat "$(streptavidin_comparison_dir "$system_root")/count.txt")
+      if [[ $(basename "$system_root") == streptavidin_pose_errors ]]; then
+        printf '<li class="report-row"><div class="report-info"><a href="reports/report_%s.html">Streptavidin — three pose-error cases</a><span>%s volumes compared against ground truth</span></div></li>\n' \
+          "$system_name" "$comparison_counts" >> "$output_dir/index.html"
+        continue
+      fi
       printf '<li class="report-row"><div class="report-info"><a href="reports/report_%s.html">Streptavidin — 100 solve3D restarts</a><span>%s volumes compared against ground truth; per-restart docking and truth FSC in report</span></div></li>\n' \
         "$system_name" "$comparison_counts" >> "$output_dir/index.html"
       continue
