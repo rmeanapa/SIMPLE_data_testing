@@ -81,9 +81,13 @@ def legacy_metrics(artifacts):
         return metrics(output)
 
 
-def history_graph(records):
+def history_graph(records, current=None):
     """Render a small, self-contained SVG without adding runner dependencies."""
-    ordered = sorted(records.values(), key=lambda row: row["created_at"])
+    rows = [row for row in records.values()
+            if current is None or str(row["id"]) != str(current["id"])]
+    if current is not None:
+        rows.append(current)
+    ordered = sorted(rows, key=lambda row: row["created_at"])
     times = [datetime.strptime(row["created_at"], "%Y-%m-%dT%H:%M:%SZ")
              .replace(tzinfo=timezone.utc).timestamp()
              for row in ordered]
@@ -94,7 +98,8 @@ def history_graph(records):
            'style="display:block;width:100%;max-width:820px;height:auto;background:white">',
            '<title id="fsc-trend-title">FSC resolution over time</title>',
            '<desc id="fsc-trend-desc">Two plots show resolution at FSC 0.5 and 0.143 '
-           'for successful Actions runs. Lower resolution in Angstrom is better. '
+           'for the comparison runs in the history table. '
+           'Lower resolution in Angstrom is better. '
            'Missing values interrupt lines. Each point links to its Actions run.</desc>',
            '<g font-family="sans-serif" font-size="11" fill="#374151">',
            '<text x="12" y="18" font-size="14">FSC resolution over time — lower is better</text>']
@@ -119,7 +124,7 @@ def history_graph(records):
             series.append(values)
         valid = [value for values in series for value in values if value is not None]
         if not valid:
-            out.append(f'<text x="{left+30}" y="{top+100}">No successful FSC values available</text>')
+            out.append(f'<text x="{left+30}" y="{top+100}">No FSC values available</text>')
             continue
         low, high = min(valid), max(valid)
         padding = max((high - low) * 0.15, high * 0.005, 0.01)
@@ -173,22 +178,23 @@ def history_graph(records):
 
 def render(records, current):
     esc = lambda value: html.escape(str(value), quote=True)
-    out = ['<section id="pose-cont-history"><h2>Successful Actions history</h2>',
+    out = ['<section id="pose-cont-history"><h2>Actions history</h2>',
            '<p>Final resolution in Å (lower is better). Each arm uses its final logged '
-           'FSC estimate. Missing results are shown explicitly. The current run is '
-           'listed separately until GitHub confirms success.</p>',
-           history_graph(records),
+           'FSC estimate. Missing results are shown explicitly.</p>',
+           history_graph(records, current),
            '<p><a href="pose_cont_fsc_history.svg" download>Download graph (SVG)</a></p>',
            '<div style="overflow-x:auto"><table><thead><tr><th>Run / attempt</th>'
            '<th>Started (UTC)</th><th>Commit</th><th>Comparison</th>'
            '<th>FSC=0.5 (Å)</th><th>FSC=0.143 (Å)</th></tr></thead><tbody>']
-    ordered = sorted(records.values(), key=lambda row: row["created_at"], reverse=True)
+    rows = [row for row in records.values()
+            if current is None or str(row["id"]) != str(current["id"])]
+    if current is not None:
+        rows.append(current)
+    ordered = sorted(rows, key=lambda row: row["created_at"], reverse=True)
     if not ordered:
-        out.append('<tr><td colspan="6">No previous successful runs found.</td></tr>')
-    for row in ([current] if current else []) + ordered:
+        out.append('<tr><td colspan="6">No FSC results found.</td></tr>')
+    for row in ordered:
         label = f"#{row['run_number']} / {row['run_attempt']}"
-        if row is current:
-            label += " (current; success pending)"
         for arm in ARMS:
             values = row.get("metrics", {}).get(arm, {})
             out.append(f'<tr><td><a href="{esc(row["html_url"])}">{esc(label)}</a></td>'
@@ -254,7 +260,7 @@ def main():
     (site / "pose_cont_history.json").write_text(json.dumps(
         {"successful_runs": list(records.values()), "current_run": current}, indent=2) + "\n",
         encoding="utf-8")
-    (site / "pose_cont_fsc_history.svg").write_text(history_graph(records) + "\n", encoding="utf-8")
+    (site / "pose_cont_fsc_history.svg").write_text(history_graph(records, current) + "\n", encoding="utf-8")
     fragment = render(records, current)
     for target in (site / "index.html", site / "reports/report_betagal_pose_cont.html"):
         if target.is_file():
