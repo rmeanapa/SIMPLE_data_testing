@@ -12,7 +12,7 @@ Usage: bash streptav4_pose_errors.sh [--prepare-only] [RUN_DIR]
 
 Default RUN_DIR: ./streptavidin_pose_errors (must not already exist).
 Uses $simple_exec when set, otherwise simple_exec on PATH. The executable
-must support oriops text I/O and update_project path remapping. Requires Python 3.8+.
+must support oriops text I/O and update_project path remapping. Requires Bash, awk and GNU coreutils.
 
 STREPTAVIDIN_ROOT       Dataset root, as in streptav4.sh.
 SIMPLE_SEED            Reproducible seed (default 20261022).
@@ -57,13 +57,6 @@ nthr=${STREPTAVIDIN_POSE_NTHR:-4}
 for count in "$nparts" "$nthr"; do
     [[ $count =~ ^[1-9][0-9]*$ ]] || { echo 'Partition/thread counts must be positive integers.' >&2; exit 2; }
 done
-# Fail early if the companion helper or Python is unavailable.
-[[ -r "$script_dir/perturb_project_poses.py" ]] || {
-    echo "Missing $script_dir/perturb_project_poses.py" >&2; exit 1;
-}
-python3 -c 'import sys; sys.exit(sys.version_info < (3, 8))' || {
-    echo 'Pose preparation requires Python 3.8 or newer.' >&2; exit 1;
-}
 
 run_dir=${1:-$PWD/streptavidin_pose_errors}
 [[ ! -e "$run_dir" && ! -L "$run_dir" ]] || {
