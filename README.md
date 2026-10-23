@@ -1,7 +1,7 @@
 # SIMPLE Data Testing
 
 - [Streptavidin report](https://rmeanapa.github.io/SIMPLE_data_testing/streptavidin/)
-- [Streptavidin pose-error report](https://rmeanapa.github.io/SIMPLE_data_testing/streptavidin_pose_errors/)
-- [Betagal pose-continuation report](https://rmeanapa.github.io/SIMPLE_data_testing/betagal_pose_cont/)
+- [Betagal pose-continuous report](https://rmeanapa.github.io/SIMPLE_data_testing/betagal_pose_cont/)
+- [Streptavidin pose-continous report](https://rmeanapa.github.io/SIMPLE_data_testing/streptavidin_pose_errors/)
 - [Dataset reports](https://rmeanapa.github.io/SIMPLE_data_testing/)
 

@@ -42,7 +42,7 @@ if [[ "$selected_system" == streptavidin ]]; then
 fi
 if [[ "$selected_system" == streptavidin_pose_errors ]]; then
     systems=()
-    for script in streptav4_pose_errors.sh perturb_project_poses.sh; do
+    for script in streptav4_pose_errors.sh perturb_project_poses.sh perturb_project_poses.py; do
         [[ -r "$data_checkout/$script" ]] || { echo "Missing $data_checkout/$script" >&2; exit 1; }
     done
     [[ ! -e "$PWD/streptavidin_pose_errors" ]] || { echo 'Pose-error campaign already exists.' >&2; exit 1; }
