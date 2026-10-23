@@ -1,0 +1,104 @@
+name: Streptavidin pose-continuation FSC CI
+
+on:
+  #push: {}
+  schedule:
+    - cron: '30 0 * * *'
+      timezone: America/New_York
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+jobs:
+  streptavidin_pose_errors:
+    runs-on: [self-hosted, FRCE_HPC_strep_pose]
+    timeout-minutes: 1440
+    env:
+      SIMPLE_PATH: /home/meanapanedar2/SIMPLE/build
+      SIMPLE_SEED: '20261022'
+      RUN_DIR: ${{ github.workspace }}/ci_runs/${{ github.run_id }}_${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct and continuously refine the three pose-error cases
+        run: |
+          mkdir -p "$RUN_DIR"
+          cd "$RUN_DIR"
+          bash "$GITHUB_WORKSPACE/submit_data_testing.sh" streptavidin_pose_errors
+      - name: Compare all three maps against ground truth
+        if: always()
+        run: |
+          mkdir -p "$RUN_DIR/streptavidin_pose_errors"
+          REPORT_SITE_DIR="$RUN_DIR/streptavidin_pose_errors/site" bash ./make_report.sh "$RUN_DIR/streptavidin_pose_errors"
+          test "$(cat "$RUN_DIR/streptavidin_pose_errors/site/comparisons/streptavidin_pose_errors/count.txt")" = 3/3
+      - name: Upload final volumes, logs and comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: streptavidin_pose_errors-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ci_runs/**/streptavidin_pose_errors/site/
+            ci_runs/**/streptavidin_pose_errors/*_refine3D_auto_pose_error_*/rec_final_state01.mrc
+            ci_runs/**/streptavidin_pose_errors/*_refine3D_auto_pose_error_*/recvol_state01.mrc
+            ci_runs/**/streptavidin_pose_errors/*_refine3D_auto_pose_error_*/reconstruct.log
+            ci_runs/**/streptavidin_pose_errors/*_refine3D_auto_pose_error_*/RESOLUTION*
+            ci_runs/**/streptavidin_pose_errors/*_refine3D_auto_pose_error_*/LOG
+            ci_runs/**/streptavidin_pose_errors/preparation/*.log
+            ci_runs/**/streptavidin_pose_errors/preparation/LOG
+            ci_runs/**/streptavidin_pose_errors/*.tsv
+            ci_runs/**/logs/streptavidin_pose_errors-*.out
+            ci_runs/**/logs/streptavidin_pose_errors-*.err
+            ci_runs/**/jobs.txt
+      - name: Upload independent streptavidin_pose_errors webpage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: streptavidin_pose_errors-report-site
+          path: ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/streptavidin_pose_errors/site/
+          if-no-files-found: error
+          retention-days: 31
+
+  publish_report:
+    name: Publish streptavidin_pose_errors webpage
+    needs: streptavidin_pose_errors
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: simple-report-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preserve the latest main report when available
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir site
+          artifact=$(gh api "repos/$GH_REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts | map(select(.expired == false and (.name | startswith("simple-data-sets-report-")))) | first | .id // empty')
+          if [[ -n "$artifact" ]]; then
+            gh api "repos/$GH_REPO/actions/artifacts/$artifact/zip" > main-report.zip
+            unzip -q main-report.zip -d site
+          else
+            printf '%s\n' '<a href="streptavidin_pose_errors/">Streptavidin report</a>' > site/index.html
+          fi
+          bash .github/scripts/restore_report_sites.sh site streptavidin_pose_errors
+          rm -rf site/streptavidin_pose_errors
+      - uses: actions/download-artifact@v4
+        with:
+          name: streptavidin_pose_errors-report-site
+          path: site/streptavidin_pose_errors
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - name: Deploy streptavidin_pose_errors webpage
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -224,7 +224,7 @@ write_streptavidin_comparisons() {
       printf '<h2>Streptavidin: all restart volumes against ground truth</h2>\n'
     fi
     printf '<p>Ground truth: <code>%s</code>. Both hands docked at 100–20 Å; truth FSC uses an 80 Å spherical soft mask.</p>\n' "$(printf '%s' "$truth" | html_escape)"
-    printf '<p>Red FSC values exceed the resolution limit of <strong>%s Å</strong> (higher is worse). Red rows also identify failed or missing runs. These highlights do not change the run status.</p>\n' "$FINAL_RESOLUTION_THRESHOLD_ANGSTROM"
+    printf '<p>Red FSC values exceed the resolution limit of <strong>%s Å</strong>. Red rows also identify failed or missing runs. These highlights do not change the run status.</p>\n' "$FINAL_RESOLUTION_THRESHOLD_ANGSTROM"
     printf '<table><thead><tr><th>%s</th><th>Output volume</th><th>Status</th><th>Direct docking CC</th><th>Mirrored docking CC</th><th>Selected hand</th><th>Truth FSC=0.5 (Å)</th><th>Truth FSC=0.143 (Å)</th><th>Details</th></tr></thead><tbody>\n' "$first_heading"
   } > "$out/table.html"
   for index in "${indices[@]}"; do
