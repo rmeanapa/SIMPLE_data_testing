@@ -19,12 +19,14 @@ SIMPLE_SEED            Reproducible seed (default 20261022).
 STREPTAVIDIN_POSE_NPARTS  Refinement partitions (default 8).
 STREPTAVIDIN_POSE_NTHR    Threads per partition (default 4).
 
+Cases (angular degrees / added x,y pixels): 5/1, 10/3, 15/5, 20/7.
+
 --prepare-only creates the relocated and perturbed projects without refining.
 Each arm first reconstructs recvol_state01.mrc using CC without regularization,
 then runs refine3D_auto pose_cont=only from that map and the perturbed poses.
-The three arms have their own LOG, reconstruct.log, project, maps and FSC files.
+The four arms have their own LOG, reconstruct.log, project, maps and FSC files.
 runs.tsv records the arm paths, bounds, seed, and completion status.
-For a later FSC report, pass all three arm directories to make_report.sh.
+For a later FSC report, pass all four arm directories to make_report.sh.
 HELP
 }
 
@@ -86,20 +88,21 @@ echo 'Preparing relocated runtime project...'
 ) > "$run_dir/preparation/LOG" 2>&1 || {
     echo "Project relocation failed; see $run_dir/preparation/LOG" >&2; exit 1;
 }
-echo 'Creating the three random pose perturbations...'
+echo 'Creating the four random pose perturbations...'
 bash "$perturb_script" "$runtime_project" "$seed" >> "$run_dir/preparation/LOG" 2>&1 || {
     echo "Pose perturbation failed; see $run_dir/preparation/LOG" >&2; exit 1;
 }
 
-maxima=(5 10 15)
+maxima=(5 10 15 20)
+shift_maxima=(1 3 5 7)
 arms=()
-statuses=(PREPARED PREPARED PREPARED)
+statuses=(PREPARED PREPARED PREPARED PREPARED)
 for i in "${!maxima[@]}"; do
     maximum=${maxima[$i]}
     printf -v name '%02d_refine3D_auto_pose_error_%d' "$((i + 1))" "$maximum"
     arm="$run_dir/$name"
     mkdir "$arm"
-    cp -- "$run_dir/preparation/streptav4_runtime_err${maximum}deg_${maximum}px.simple" "$arm/streptav4.simple"
+    cp -- "$run_dir/preparation/streptav4_runtime_err${maximum}deg_${shift_maxima[$i]}px.simple" "$arm/streptav4.simple"
     (
         cd "$arm"
         "$simple_executable" prg=update_project projfile=streptav4.simple mkdir=no nthr=1
@@ -111,21 +114,21 @@ write_manifest() {
     printf 'angle_max_deg\tshift_max_px\tseed\tstatus\tproject\tlog\tfinal_volume\n' > "$run_dir/runs.tsv"
     for index in "${!maxima[@]}"; do
         printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-            "${maxima[$index]}" "${maxima[$index]}" "$seed" "${statuses[$index]}" \
+            "${maxima[$index]}" "${shift_maxima[$index]}" "$seed" "${statuses[$index]}" \
             "${arms[$index]}/streptav4.simple" "${arms[$index]}/LOG" \
             "${arms[$index]}/rec_final_state01.mrc" >> "$run_dir/runs.tsv"
     done
 }
 write_manifest
 if (( prepare_only )); then
-    echo "Prepared three projects; no refinements run. Manifest: $run_dir/runs.tsv"
+    echo "Prepared four projects; no refinements run. Manifest: $run_dir/runs.tsv"
     exit 0
 fi
 
 failed=0
 for i in "${!maxima[@]}"; do
     arm=${arms[$i]}
-    echo "Starting reconstruction and continuous-only refinement: ${maxima[$i]} degrees / ${maxima[$i]} pixels"
+    echo "Starting reconstruction and continuous-only refinement: ${maxima[$i]} degrees / ${shift_maxima[$i]} pixels"
     statuses[$i]=RUNNING
     write_manifest
     status=0

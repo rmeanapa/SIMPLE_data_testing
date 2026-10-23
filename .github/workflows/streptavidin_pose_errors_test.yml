@@ -23,17 +23,17 @@ jobs:
       RUN_DIR: ${{ github.workspace }}/ci_runs/${{ github.run_id }}_${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
-      - name: Reconstruct and continuously refine the three pose-error cases
+      - name: Reconstruct and continuously refine the four pose-error cases
         run: |
           mkdir -p "$RUN_DIR"
           cd "$RUN_DIR"
           bash "$GITHUB_WORKSPACE/submit_data_testing.sh" streptavidin_pose_errors
-      - name: Compare all three maps against ground truth
+      - name: Compare all four maps against ground truth
         if: always()
         run: |
           mkdir -p "$RUN_DIR/streptavidin_pose_errors"
           REPORT_SITE_DIR="$RUN_DIR/streptavidin_pose_errors/site" bash ./make_report.sh "$RUN_DIR/streptavidin_pose_errors"
-          test "$(cat "$RUN_DIR/streptavidin_pose_errors/site/comparisons/streptavidin_pose_errors/count.txt")" = 3/3
+          test "$(cat "$RUN_DIR/streptavidin_pose_errors/site/comparisons/streptavidin_pose_errors/count.txt")" = 4/4
       - name: Upload final volumes, logs and comparison report
         if: always()
         uses: actions/upload-artifact@v4

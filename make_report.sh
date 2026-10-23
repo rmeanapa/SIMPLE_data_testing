@@ -6,7 +6,7 @@
 # By default this writes build/index.html plus per-system reports in
 # build/reports/. Set REPORT_SITE_DIR to choose a different output directory.
 # Pass streptavidin to compare all 100 solve3D restarts against truth.
-# A streptavidin_pose_errors campaign compares its three refined maps against truth.
+# A streptavidin_pose_errors campaign compares its four refined maps against truth.
 
 set -euo pipefail
 
@@ -194,9 +194,10 @@ write_streptavidin_comparisons() {
   local directories=() candidates=() tasks=("$1"/restart_[0-9]*)
   local indices=({1..100}) expected=100 case_label=restart first_heading=Restart row_label
   local volume_names=(rec_final_state01.mrc recvol_state01.mrc)
-  local pose_errors=0 manifest_status expected_label=restarts
+  local pose_errors=0 manifest_status expected_label=restarts shift_max
+  local -A pose_shifts=([5]=1 [10]=3 [15]=5 [20]=7)
   if [[ $(basename "$root") == streptavidin_pose_errors ]]; then
-    pose_errors=1; indices=(5 10 15); expected=3; case_label='pose-error case'
+    pose_errors=1; indices=(5 10 15 20); expected=4; case_label='pose-error case'
     volume_names=(rec_final_state01.mrc); expected_label=cases
     first_heading='Maximum angular error / positive x,y error'
   fi
@@ -214,12 +215,12 @@ write_streptavidin_comparisons() {
       ! compgen -G "$root/*_solve3D" > /dev/null && [[ -d "$root/8_select_particles" ]]; then
     campaign="$root/8_select_particles"
   fi
-  if (( pose_errors )); then printf 'angle_max_deg'; else printf 'restart'; fi > "$out/results.tsv"
+  if (( pose_errors )); then printf 'angle_max_deg\tshift_max_px'; else printf 'restart'; fi > "$out/results.tsv"
   printf '\tvolume\tstatus\tdirect_cc\tmirrored_cc\thand\tfsc05\tfsc0143\terror\n' >> "$out/results.tsv"
   {
     if (( pose_errors )); then
       printf '<h2>Streptavidin: pose perturbations against ground truth</h2>\n'
-      printf '<p>Independent random errors: each Euler coordinate up to ±5°, ±10° or ±15°; each x/y shift from 0 to 5, 10 or 15 pixels. Each case starts from the same original project. The reference is used only for evaluation.</p>\n'
+      printf '<p>Independent random errors: angular / positive x,y shift bounds: ±5° / 0–1 px, ±10° / 0–3 px, ±15° / 0–5 px, and ±20° / 0–7 px. Each case starts from the same original project. The reference is used only for evaluation.</p>\n'
     else
       printf '<h2>Streptavidin: all restart volumes against ground truth</h2>\n'
     fi
@@ -233,7 +234,8 @@ write_streptavidin_comparisons() {
     direct=""; mirrored=""; hand=""; fsc05=""; fsc0143=""
     row_label="$index"
     if (( pose_errors )); then
-      row_label="±$index° / 0–$index px"
+      shift_max=${pose_shifts[$index]}
+      row_label="±$index° / 0–$shift_max px"
       mapfile -t candidates < <(compgen -G "$root/*_refine3D_auto_pose_error_$index" | sort)
       if [[ ${#candidates[@]} != 1 || ! -d ${candidates[0]} ]]; then
         error='Missing or ambiguous refinement directory'
@@ -246,7 +248,7 @@ write_streptavidin_comparisons() {
         elif ! grep -q 'SIMPLE_REFINE3D NORMAL STOP' "$log"; then
           error='No successful refinement completion marker'
         fi
-        manifest_status=$(awk -F '\t' -v level="$index" '$1==level {print $4; exit}' "$root/runs.tsv" 2>/dev/null || true)
+        manifest_status=$(awk -F '\t' -v level="$index" -v shift="$shift_max" '$1==level && $2==shift {print $4; exit}' "$root/runs.tsv" 2>/dev/null || true)
         if [[ $manifest_status != PASS && -z $error ]]; then
           error="Refinement manifest status: ${manifest_status:-missing}"; status=failed
         fi
@@ -310,7 +312,9 @@ write_streptavidin_comparisons() {
         error=$(cat "$work/error.txt"); status=error
       fi
     fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$index" "$volume" "$status" \
+    printf '%s' "$index" >> "$out/results.tsv"
+    if (( pose_errors )); then printf '\t%s' "$shift_max" >> "$out/results.tsv"; fi
+    printf '\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$volume" "$status" \
       "$direct" "$mirrored" "$hand" "$fsc05" "$fsc0143" "${error//$'\t'/ }" >> "$out/results.tsv"
     printf 'Streptavidin %s %d: %s\n' "$case_label" "$index" "$status"
     row_class=""
@@ -2278,7 +2282,7 @@ HTML_INDEX_HEAD
     if is_streptavidin_root "$system_root"; then
       comparison_counts=$(cat "$(streptavidin_comparison_dir "$system_root")/count.txt")
       if [[ $(basename "$system_root") == streptavidin_pose_errors ]]; then
-        printf '<li class="report-row"><div class="report-info"><a href="reports/report_%s.html">Streptavidin — three pose-error cases</a><span>%s volumes compared against ground truth</span></div></li>\n' \
+        printf '<li class="report-row"><div class="report-info"><a href="reports/report_%s.html">Streptavidin — four pose-error cases</a><span>%s volumes compared against ground truth</span></div></li>\n' \
           "$system_name" "$comparison_counts" >> "$output_dir/index.html"
         continue
       fi
