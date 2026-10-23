@@ -2053,10 +2053,227 @@ HTML_FOOT
   echo "Report written to: $OUTPUT"
 }
 
+# Machine-readable snapshot for comparisons between report generations.
+# '-' keeps missing values explicit when shell readers split TSV fields.
+fsc_snapshot_header() {
+  printf 'dataset\tfsc05\tfsc0143\tstatus\tgenerated_at\tsimple_commit\n'
+}
+
+valid_fsc_snapshot() {
+  [[ -s "$1" ]] && awk -F '\t' '
+    NR==1 { if($0!="dataset\tfsc05\tfsc0143\tstatus\tgenerated_at\tsimple_commit") exit 1; next }
+    {
+      if(NF!=6 || $1!~/^[A-Za-z0-9_.-]+$/ || seen[$1]++) bad=1
+      for(i=2;i<=3;i++) if($i!="-" && ($i!~/^[+]?[0-9]+([.][0-9]*)?([Ee][-+]?[0-9]+)?$/ || $i<=0)) bad=1
+      if($4!~/^(PASS|FAIL|NOT EVALUATED|UNKNOWN)$/) bad=1
+    }
+    END { if(NR<1 || bad)exit 1 }
+  ' "$1"
+}
+
+# Bootstrap from the index format published before snapshots were available.
+fsc_snapshot_from_index() {
+  fsc_snapshot_header
+  awk '
+    BEGIN { RS="</li>"; OFS="\t"; timestamp="unavailable"; commit="unavailable" }
+    function metric(row, criterion, value) {
+      value=row
+      if(!match(value,"FSC=" criterion " resolution:[^<]*<strong[^>]*>[^<]+"))return "-"
+      value=substr(value,RSTART,RLENGTH); sub(/^.*>/,"",value); sub(/[[:space:]].*$/,"",value)
+      return (value~/^[+]?[0-9]+([.][0-9]*)?([Ee][-+]?[0-9]+)?$/ && value>0) ? value : "-"
+    }
+    {
+      if(match($0,/Generated [0-9-]+ [0-9:]+ UTC/)) {
+        timestamp=substr($0,RSTART,RLENGTH); sub(/^Generated /,"",timestamp)
+      }
+      if(match($0,/SIMPLE commit <code>[a-f0-9]+/)) {
+        commit=substr($0,RSTART,RLENGTH); sub(/^.*>/,"",commit)
+      }
+      if($0!~/<li class="report-row">/)next
+      row=$0; sub(/^.*<li class="report-row">/,"",row)
+      if(!match(row,/href="reports\/report_[A-Za-z0-9_.-]+[.]html"/))next
+      dataset=substr(row,RSTART,RLENGTH); sub(/^href="reports\/report_/,"",dataset); sub(/[.]html"$/,"",dataset)
+      a=metric(row,"0[.]5"); b=metric(row,"0[.]143")
+      if(a=="-" && b=="-")next
+      status="UNKNOWN"
+      if(row~/>PASS<\//)status="PASS"
+      else if(row~/>FAIL<\//)status="FAIL"
+      else if(row~/>NOT EVALUATED<\//)status="NOT EVALUATED"
+      if(!seen[dataset]++)print dataset,a,b,status,timestamp,commit
+    }
+  ' "$1"
+}
+
+prepare_previous_fsc_snapshot() {
+  local output_dir="$1" target="$1/fsc_previous.tsv" scratch url="${REPORT_PREVIOUS_FSC_URL:-}" source=""
+  scratch=$(mktemp "$output_dir/.previous-fsc.XXXXXXXX")
+  if [[ -n ${REPORT_PREVIOUS_FSC_FILE:-} ]]; then
+    if ! valid_fsc_snapshot "$REPORT_PREVIOUS_FSC_FILE"; then
+      rm -f "$scratch"
+      echo "Invalid previous FSC snapshot: $REPORT_PREVIOUS_FSC_FILE" >&2
+      return 1
+    fi
+    cp -- "$REPORT_PREVIOUS_FSC_FILE" "$scratch"; source='explicit snapshot'
+  elif valid_fsc_snapshot "$output_dir/fsc_summary.tsv"; then
+    cp -- "$output_dir/fsc_summary.tsv" "$scratch"; source='previous local report'
+  elif [[ -f "$output_dir/index.html" ]]; then
+    fsc_snapshot_from_index "$output_dir/index.html" > "$scratch"
+    [[ $(wc -l < "$scratch") -le 1 ]] || source='previous local report (HTML)'
+  fi
+  if [[ -z $source ]]; then
+    if [[ -z $url && ${GITHUB_ACTIONS:-} == true && -n ${GITHUB_REPOSITORY:-} ]]; then
+      url="https://${GITHUB_REPOSITORY%%/*}.github.io/${GITHUB_REPOSITORY#*/}/fsc_summary.tsv"
+    fi
+    if [[ -n $url ]] && command -v curl >/dev/null; then
+      if curl -fsSL --connect-timeout 5 --max-time 15 "$url" -o "$scratch" 2>/dev/null && valid_fsc_snapshot "$scratch"; then
+        source='previous published report'
+      elif [[ $url == */fsc_summary.tsv ]] && \
+          curl -fsSL --connect-timeout 5 --max-time 15 "${url%fsc_summary.tsv}index.html" -o "$scratch.html" 2>/dev/null; then
+        fsc_snapshot_from_index "$scratch.html" > "$scratch"
+        [[ $(wc -l < "$scratch") -le 1 ]] || source='previous published report (HTML)'
+      fi
+    fi
+  fi
+  if [[ -z $source ]]; then
+    fsc_snapshot_header > "$scratch"
+    source='unavailable; this report will establish a baseline'
+  fi
+  mv -- "$scratch" "$target"
+  rm -f -- "$scratch.html"
+  FSC_PREVIOUS_SOURCE=$source
+}
+
+fsc_history_header() {
+  printf 'run_id\t'; fsc_snapshot_header
+}
+
+valid_fsc_history() {
+  [[ -s "$1" ]] && awk -F '\t' '
+    NR==1 {if($0!="run_id\tdataset\tfsc05\tfsc0143\tstatus\tgenerated_at\tsimple_commit")exit 1;next}
+    {
+      if(NF!=7 || $1!~/^[A-Za-z0-9_.:-]+$/ || $2!~/^[A-Za-z0-9_.-]+$/ || seen[$1,$2]++)bad=1
+      for(i=3;i<=4;i++)if($i!="-" && ($i!~/^[+]?[0-9]+([.][0-9]*)?([Ee][-+]?[0-9]+)?$/ || $i<=0))bad=1
+      if($5!~/^(PASS|FAIL|NOT EVALUATED|UNKNOWN)$/)bad=1
+    }
+    END {if(NR<1 || bad)exit 1}
+  ' "$1"
+}
+
+append_fsc_snapshot() {
+  local snapshot="$1" history="$2" identity
+  valid_fsc_snapshot "$snapshot" || return 0
+  identity="snapshot-$(sha256sum < "$snapshot" | awk '{print $1}')"
+  awk -F '\t' -v id="$identity" 'NR>1 {print id "\t" $0}' "$snapshot" >> "$history"
+}
+
+# Keep the complete history in oldest-to-newest run order. Older reports can
+# supply their two snapshots until a published history file becomes available.
+prepare_fsc_history() {
+  local output_dir="$1" scratch url="${REPORT_FSC_HISTORY_URL:-}" base="${REPORT_PREVIOUS_FSC_URL:-}"
+  local history="$1/fsc_history.tsv"
+  [[ ${REPORT_FSC_HISTORY_LIMIT:-10} =~ ^[0-9]+$ ]] || {
+    echo 'REPORT_FSC_HISTORY_LIMIT must be nonnegative (0 shows all runs).' >&2; return 1;
+  }
+  scratch=$(mktemp "$output_dir/.fsc-history.XXXXXXXX")
+  fsc_history_header > "$scratch"
+  FSC_HISTORY_FULL=0
+  if [[ -n ${REPORT_FSC_HISTORY_FILE:-} ]]; then
+    if ! valid_fsc_history "$REPORT_FSC_HISTORY_FILE"; then
+      rm -f "$scratch"; echo "Invalid FSC history: $REPORT_FSC_HISTORY_FILE" >&2; return 1
+    fi
+    cp -- "$REPORT_FSC_HISTORY_FILE" "$scratch"; FSC_HISTORY_FULL=1
+  elif valid_fsc_history "$history" && [[ $(wc -l < "$history") -gt 1 ]]; then
+    cp -- "$history" "$scratch"; FSC_HISTORY_FULL=1
+  elif valid_fsc_snapshot "$output_dir/fsc_summary.tsv"; then
+    append_fsc_snapshot "$output_dir/fsc_previous.tsv" "$scratch"
+    append_fsc_snapshot "$output_dir/fsc_summary.tsv" "$scratch"
+  else
+    if [[ -z $base && ${GITHUB_ACTIONS:-} == true && -n ${GITHUB_REPOSITORY:-} ]]; then
+      base="https://${GITHUB_REPOSITORY%%/*}.github.io/${GITHUB_REPOSITORY#*/}/fsc_summary.tsv"
+    fi
+    if [[ -z $url && $base == */fsc_summary.tsv ]]; then url="${base%fsc_summary.tsv}fsc_history.tsv"; fi
+    if [[ -n $url ]] && command -v curl >/dev/null; then
+      if curl -fsSL --connect-timeout 5 --max-time 10 "$url" -o "$scratch.download" 2>/dev/null && valid_fsc_history "$scratch.download"; then
+        cp -- "$scratch.download" "$scratch"; FSC_HISTORY_FULL=1
+      elif [[ $base == */fsc_summary.tsv ]] && \
+          curl -fsSL --connect-timeout 5 --max-time 10 "${base%fsc_summary.tsv}fsc_previous.tsv" -o "$scratch.download" 2>/dev/null; then
+        append_fsc_snapshot "$scratch.download" "$scratch"
+      fi
+    fi
+  fi
+  mv -- "$scratch" "$history"
+  rm -f -- "$scratch.download"
+}
+
+update_fsc_history() {
+  local current="$1" previous="$2" history="$3" scratch run_id
+  scratch=$(mktemp "${history%/*}/.fsc-history.XXXXXXXX")
+  if [[ -n ${GITHUB_RUN_ID:-} ]]; then
+    run_id="gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT:-1}"
+  else
+    run_id="local-$(date -u +%s%N)-$$"
+  fi
+  if [[ $FSC_HISTORY_FULL != 1 ]]; then append_fsc_snapshot "$previous" "$history"; fi
+  # Re-generating one Actions attempt replaces its entries instead of duplicating it.
+  awk -F '\t' -v run="$run_id" 'NR==1 || ($1!=run && !seen[$1,$2]++)' "$history" > "$scratch"
+  awk -F '\t' -v run="$run_id" 'NR>1 {print run "\t" $0}' "$current" >> "$scratch"
+  mv -- "$scratch" "$history"
+}
+
+write_fsc_comparison_table() {
+  local current="$1" history="$2" limit="${REPORT_FSC_HISTORY_LIMIT:-10}"
+  [[ $limit =~ ^[0-9]+$ ]] || { echo 'REPORT_FSC_HISTORY_LIMIT must be nonnegative (0 shows all runs).' >&2; return 1; }
+  printf '<section class="fsc-summary" aria-labelledby="fsc-summary-title"><h2 id="fsc-summary-title">Dataset FSC history</h2>\n'
+  printf '<p>Recent runs, newest first. Resolution in Å: <span class="fsc-improved">green = improved</span>, <span class="fsc-worse">red = worse</span>; unchanged values stay uncolored. — = unavailable; * = failed run.</p>\n'
+  awk -F '\t' -v limit="$limit" '
+    function html(s) {gsub(/&/,"\\&amp;",s);gsub(/</,"\\&lt;",s);gsub(/>/,"\\&gt;",s);gsub(/"/,"\\&quot;",s);return s}
+    function cell(value,older,status,d,cls,hint) {
+      if(value=="-" || value=="")return "<td class=\"fsc-missing\">—</td>"
+      cls=""; hint=""
+      if(older!="-" && older!="") {
+        d=value-older
+        if(d<=-0.0005)cls="fsc-improved"
+        else if(d>=0.0005)cls="fsc-worse"
+        hint=sprintf("Change vs preceding run: %+.3f Å",d)
+      }
+      return "<td class=\""cls"\" title=\""hint"\">"html(value)(status=="FAIL"?"*":"")"</td>"
+    }
+    FILENAME==ARGV[1] {
+      if(FNR==1)next
+      if(!known[$1]++){runs[++n]=$1}
+      a[$1,$2]=$3; b[$1,$2]=$4; status[$1,$2]=$5
+      next
+    }
+    FNR>1 {datasets[++nd]=$1}
+    END {
+      shown=(limit==0 || limit>n) ? n : limit
+      for(metric=1;metric<=2;metric++) {
+        printf "<h3>FSC=%s (Å)</h3><div class=\"fsc-table-scroll\"><table><thead><tr><th>Dataset</th>",metric==1?"0.5":"0.143"
+        for(j=0;j<shown;j++)printf "<th>%s</th>",j==0?"Current":"Run −"j
+        print "</tr></thead><tbody>"
+        for(i=1;i<=nd;i++) {
+          dataset=datasets[i];label=dataset;gsub(/_/," ",label)
+          printf "<tr><th scope=\"row\"><a href=\"reports/report_%s.html\">%s</a></th>",html(dataset),html(label)
+          for(j=0;j<shown;j++) {
+            run=runs[n-j];older=(j+1<shown)?runs[n-j-1]:""
+            value=metric==1?a[run,dataset]:b[run,dataset]
+            previous=metric==1?a[older,dataset]:b[older,dataset]
+            printf "%s",cell(value,previous,status[run,dataset])
+          }
+          print "</tr>"
+        }
+        print "</tbody></table></div>"
+      }
+    }
+  ' "$history" "$current"
+  printf '</section>\n'
+}
+
 write_pages_site() {
   local output_dir="$1"
   local reports_dir="$output_dir/reports"
   local generated_at
+  local summary_current summary_fragment summary_index FSC_PREVIOUS_SOURCE FSC_HISTORY_FULL
   local simple_commit="unavailable"
   local system_root
   local system_name
@@ -2129,6 +2346,11 @@ write_pages_site() {
   if git -C "$SIMPLE_SOURCE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     simple_commit="$(git -C "$SIMPLE_SOURCE_DIR" rev-parse HEAD)"
   fi
+
+  prepare_fsc_history "$output_dir"
+  prepare_previous_fsc_snapshot "$output_dir"
+  summary_current=$(mktemp "$output_dir/.current-fsc.XXXXXXXX")
+  fsc_snapshot_header > "$summary_current"
 
   cat > "$output_dir/index.html" <<HTML_INDEX_HEAD
 <!doctype html>
@@ -2233,6 +2455,17 @@ write_pages_site() {
     a:hover {
       text-decoration: underline;
     }
+    .fsc-summary { background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 1rem; margin: 1.25rem 0; }
+    .fsc-summary h2 { margin-top: 0; }
+    .fsc-summary p { color: #4b5563; font-size: 0.9rem; }
+    .fsc-table-scroll { overflow-x: auto; }
+    .fsc-summary table { border-collapse: collapse; width: 100%; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+    .fsc-summary th, .fsc-summary td { border: 1px solid #d1d5db; padding: 0.55rem; text-align: right; white-space: nowrap; }
+    .fsc-summary th:first-child { text-align: left; }
+    .fsc-summary thead { background: #f3f4f6; }
+    .fsc-improved { color: #166534; background: #dcfce7; font-weight: 700; }
+    .fsc-worse { color: #991b1b; background: #fee2e2; font-weight: 700; }
+    .fsc-missing { color: #6b7280; }
     .volume-previews {
       align-items: center;
       display: flex;
@@ -2272,6 +2505,7 @@ write_pages_site() {
   <main>
     <h1>SIMPLE data testing reports</h1>
     <p class="timestamp">Generated ${generated_at} · SIMPLE commit <code>${simple_commit}</code></p>
+    <!-- DATASET_FSC_SUMMARY -->
     <ul>
 HTML_INDEX_HEAD
 
@@ -2376,6 +2610,16 @@ HTML_INDEX_HEAD
       result_class="result-fail"
     fi
 
+    # Use the same parsed final measurements and status as the dataset card.
+    awk -v dataset="$system_name" -v a="$final_resolution" -v b="$final_resolution_0143" \
+      -v status="$result_status" -v timestamp="$generated_at" -v commit="$simple_commit" '
+      function number(s) {
+        gsub(/[Dd]/,"e",s)
+        return (s~/^[+]?[0-9]+([.][0-9]*)?([Ee][-+]?[0-9]+)?$/ && s>0) ? s : "-"
+      }
+      BEGIN {OFS="\t"; print dataset,number(a),number(b),status,timestamp,commit}
+    ' >> "$summary_current"
+
     printf '      <li class="report-row"><div class="report-info"><a href="reports/report_%s.html">%s</a><span class="report-timing">%s</span>' \
       "$system_name" "$system_label" "$(printf '%s' "$timing_label" | html_escape)" >> "$output_dir/index.html"
     printf '<div class="result-line"><span class="result-badge %s">%s</span>' \
@@ -2478,6 +2722,19 @@ HTML_INDEX_HEAD
 </body>
 </html>
 HTML_INDEX_FOOT
+
+  mv -- "$summary_current" "$output_dir/fsc_summary.tsv"
+  summary_fragment=$(mktemp "$output_dir/.fsc-table.XXXXXXXX")
+  update_fsc_history "$output_dir/fsc_summary.tsv" "$output_dir/fsc_previous.tsv" "$output_dir/fsc_history.tsv"
+  write_fsc_comparison_table "$output_dir/fsc_summary.tsv" "$output_dir/fsc_history.tsv" > "$summary_fragment"
+  summary_index=$(mktemp "$output_dir/.fsc-index.XXXXXXXX")
+  awk -v fragment="$summary_fragment" '
+    /<!-- DATASET_FSC_SUMMARY -->/ {while((getline line < fragment)>0)print line; close(fragment); next}
+    {print}
+  ' "$output_dir/index.html" > "$summary_index"
+  mv -- "$summary_index" "$output_dir/index.html"
+  rm -f -- "$summary_fragment"
+  chmod 644 "$output_dir/index.html" "$output_dir/fsc_summary.tsv" "$output_dir/fsc_previous.tsv" "$output_dir/fsc_history.tsv"
 
   echo "Pages index written to: $output_dir/index.html"
 }
