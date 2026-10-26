@@ -6,11 +6,22 @@
 # By default this writes build/index.html plus per-system reports in
 # build/reports/. Set REPORT_SITE_DIR to choose a different output directory.
 # Pass streptavidin to compare all 100 solve3D restarts against truth.
-# A streptavidin_pose_errors campaign compares its four refined maps against truth.
+# A streptavidin_pose_errors campaign compares its refined maps against truth.
 
 set -euo pipefail
 
 # Used when backfilling historical Actions logs; share the report's FSC parser.
+# Reuse the exact final-map comparison for retained iteration maps.
+compare_volume_only=0
+if [[ ${1:-} == --compare-volume ]]; then
+  [[ $# == 4 ]] || { echo 'Usage: make_report.sh --compare-volume MAP REFERENCE OUTPUT_DIR' >&2; exit 2; }
+  compare_volume_only=1
+  compare_volume=$(realpath -- "$2")
+  compare_truth=$(realpath -- "$3")
+  mkdir -p -- "$4"
+  compare_work=$(cd -- "$4" && pwd -P)
+  set -- "$(dirname -- "$compare_volume")"
+fi
 pose_metrics_only=0
 if [[ ${1:-} == --pose-cont-metrics ]]; then
   pose_metrics_only=1
@@ -136,8 +147,32 @@ streptavidin_compare() (
   IFS='|' read -r truth_box truth_pixel <<< "$metrics"
   if ! awk -v b="$box" -v p="$pixel" -v tb="$truth_box" -v tp="$truth_pixel" \
       'BEGIN { d=p-tp; if(d<0)d=-d; exit !(b==tb && d<=tp*0.0001) }'; then
-    echo 'Truth/output grids differ; resample to a common physical grid before comparison' > error.txt
-    return 1
+    if (( ! compare_volume_only )) || ! awk -v b="$box" -v p="$pixel" -v tb="$truth_box" -v tp="$truth_pixel" \
+        'BEGIN {d=b*p-tb*tp; if(d<0)d=-d; exit !(d<=tb*tp*0.0001)}'; then
+      echo 'Truth/output physical boxes differ; cannot compare without a defined grid transform' > error.txt
+      return 1
+    fi
+    # Fourier downsample the finer map; never invent extra sampled frequencies.
+    printf 'volume_box\t%s\nvolume_pixel\t%s\nreference_box\t%s\nreference_pixel\t%s\n' \
+      "$box" "$pixel" "$truth_box" "$truth_pixel" > comparison_grid.tsv
+    if (( box < truth_box )); then
+      streptavidin_simple scale_reference prg=scale vol1="$truth" \
+        outvol="$work/reference_common_grid.mrc" "smpd=$truth_pixel" "newbox=$box" || return 1
+      truth="$work/reference_common_grid.mrc"
+    else
+      streptavidin_simple scale_volume prg=scale vol1="$volume" \
+        outvol="$work/volume_common_grid.mrc" "smpd=$pixel" "newbox=$truth_box" || return 1
+      volume="$work/volume_common_grid.mrc"
+    fi
+    metrics=$(volume_header_metrics "$volume" 1) || return 1
+    IFS='|' read -r box pixel <<< "$metrics"
+    metrics=$(volume_header_metrics "$truth" 1) || return 1
+    IFS='|' read -r truth_box truth_pixel <<< "$metrics"
+    if ! awk -v b="$box" -v p="$pixel" -v tb="$truth_box" -v tp="$truth_pixel" \
+        'BEGIN {d=p-tp; if(d<0)d=-d; exit !(b==tb && d<=tp*0.0001)}'; then
+      echo 'Native resampling did not produce the expected common grid' > error.txt
+      return 1
+    fi
   fi
   if ! awk -v b="$box" -v p="$pixel" 'BEGIN { exit !(b*p>80) }'; then
     echo 'Comparison mask must fit inside the volume' > error.txt
@@ -191,15 +226,20 @@ resolution_above_limit() {
 write_streptavidin_comparisons() {
   local root="$1" out truth campaign task log directory volume error status metrics work index count=0
   local direct mirrored hand fsc05 fsc0143 details name row_class metric_class
+  local file_heading='Output volume' file_index
+  local file_labels=('Initial volume' 'Initial project' 'Initial poses' 'Final project' 'Iteration volumes' 'Final poses' 'Worker benchmark logs' 'Reference-comparison maps' 'Original estimated poses' 'Refinement log' 'Reconstruction log' 'Run metadata')
+  local file_paths=()
   local directories=() candidates=() tasks=("$1"/restart_[0-9]*)
   local indices=({1..100}) expected=100 case_label=restart first_heading=Restart row_label
   local volume_names=(rec_final_state01.mrc recvol_state01.mrc)
-  local pose_errors=0 manifest_status expected_label=restarts shift_max
-  local -A pose_shifts=([5]=1 [10]=3 [15]=5 [20]=7)
+  local pose_errors=0 manifest_status expected_label=restarts shift_max shift_mode
+  local -A pose_shifts=([5]=1 [10]=3 [15]=5 [20]=7 [25]=9)
   if [[ $(basename "$root") == streptavidin_pose_errors ]]; then
-    pose_errors=1; indices=(5 10 15 20); expected=4; case_label='pose-error case'
+    pose_errors=1; indices=(5 10 15 20 25); expected=5; case_label='pose-error case'
     volume_names=(rec_final_state01.mrc); expected_label=cases
-    first_heading='Maximum angular error / positive x,y error'
+    shift_mode=$(awk -F '\t' '$1=="shift_error_mode" {print $2;exit}' "$root/inputs.tsv" 2>/dev/null || true)
+    first_heading='Euler-coordinate bounds / per-axis x,y shift bounds'
+    file_heading='Output files'
   fi
   out=$(streptavidin_comparison_dir "$root")
   mkdir -p "$out"
@@ -220,13 +260,20 @@ write_streptavidin_comparisons() {
   {
     if (( pose_errors )); then
       printf '<h2>Streptavidin: pose perturbations against ground truth</h2>\n'
-      printf '<p>Independent random errors: angular / positive x,y shift bounds: ±5° / 0–1 px, ±10° / 0–3 px, ±15° / 0–5 px, and ±20° / 0–7 px. Each case starts from the same original project. The reference is used only for evaluation.</p>\n'
+      if [[ ! -f "$root/inputs.tsv" ]]; then
+        printf '<p>Campaign input metadata is missing; the bounds below describe the expected cases, not verified completed runs.</p>\n'
+      fi
+      printf '<p>Independent bounded errors per Euler coordinate and per x/y axis: '
+      for index in "${indices[@]}"; do
+        printf '±%s° / ±%s px; ' "$index" "${pose_shifts[$index]}"
+      done
+      printf 'Each case starts from the same original project. The polar Euler angle remains in [0,180]. The reference is used only for evaluation.</p>\n'
     else
       printf '<h2>Streptavidin: all restart volumes against ground truth</h2>\n'
     fi
     printf '<p>Ground truth: <code>%s</code>. Both hands docked at 100–20 Å; truth FSC uses an 80 Å spherical soft mask.</p>\n' "$(printf '%s' "$truth" | html_escape)"
     printf '<p>Red FSC values exceed the resolution limit of <strong>%s Å</strong>. Red rows also identify failed or missing runs. These highlights do not change the run status.</p>\n' "$FINAL_RESOLUTION_THRESHOLD_ANGSTROM"
-    printf '<table><thead><tr><th>%s</th><th>Output volume</th><th>Status</th><th>Direct docking CC</th><th>Mirrored docking CC</th><th>Selected hand</th><th>Truth FSC=0.5 (Å)</th><th>Truth FSC=0.143 (Å)</th><th>Details</th></tr></thead><tbody>\n' "$first_heading"
+    printf '<table><thead><tr><th>%s</th><th>%s</th><th>Status</th><th>Direct docking CC</th><th>Mirrored docking CC</th><th>Selected hand</th><th>Truth FSC=0.5 (Å)</th><th>Truth FSC=0.143 (Å)</th><th>Details</th></tr></thead><tbody>\n' "$first_heading" "$file_heading"
   } > "$out/table.html"
   for index in "${indices[@]}"; do
     task="$campaign"; log="$task/SOLVE3D_OUTPUT_RESTART$index"
@@ -235,7 +282,7 @@ write_streptavidin_comparisons() {
     row_label="$index"
     if (( pose_errors )); then
       shift_max=${pose_shifts[$index]}
-      row_label="±$index° / 0–$shift_max px"
+      row_label="±$index° / ±$shift_max px"
       mapfile -t candidates < <(compgen -G "$root/*_refine3D_auto_pose_error_$index" | sort)
       if [[ ${#candidates[@]} != 1 || ! -d ${candidates[0]} ]]; then
         error='Missing or ambiguous refinement directory'
@@ -248,7 +295,7 @@ write_streptavidin_comparisons() {
         elif ! grep -q 'SIMPLE_REFINE3D NORMAL STOP' "$log"; then
           error='No successful refinement completion marker'
         fi
-        manifest_status=$(awk -F '\t' -v level="$index" -v shift="$shift_max" '$1==level && $2==shift {print $4; exit}' "$root/runs.tsv" 2>/dev/null || true)
+        manifest_status=$(awk -F '\t' -v level="$index" -v shift="$shift_max" -v mode="$shift_mode" '$1==level && $2==shift && ($8==-shift || mode=="symmetric") {print $4; exit}' "$root/runs.tsv" 2>/dev/null || true)
         if [[ $manifest_status != PASS && -z $error ]]; then
           error="Refinement manifest status: ${manifest_status:-missing}"; status=failed
         fi
@@ -308,6 +355,13 @@ write_streptavidin_comparisons() {
         IFS='|' read -r direct mirrored hand fsc05 fsc0143 <<< "$metrics"
         status=compared; count=$((count+1))
         details="<a href=\"../comparisons/$(basename "$out")/$(basename "$work")/truth_fsc.csv\">FSC curve CSV</a>"
+        if (( pose_errors )); then
+          for threshold in 0.5 0.143; do
+            if ! awk -F, -v t="$threshold" 'NR>1 {if(n && prior>t && $2<=t)crossed=1; prior=$2; n++} END {exit !crossed}' "$work/truth_fsc.csv"; then
+              details+="; FSC $threshold has no downward crossing within the sampled range (reported endpoint is not a measured crossing)"
+            fi
+          done
+        fi
       else
         error=$(cat "$work/error.txt"); status=error
       fi
@@ -326,10 +380,22 @@ write_streptavidin_comparisons() {
     {
       printf '<tr class="%s"><td>%s</td><td>' "$row_class" "$row_label"
       if [[ -n "$volume" ]]; then
-        printf '<details class="volume-path"><summary>Show path</summary><code>%s</code></details>' \
+        printf '<details class="volume-path"><summary>Final volume — Show path</summary><code>%s</code></details>' \
           "$(printf '%s' "$volume" | html_escape)"
       else
         html_metric_value ""
+      fi
+      if (( pose_errors )) && [[ -n "$directory" ]]; then
+        file_paths=("$directory/initial/recvol_state01.mrc" "$directory/initial/streptav4.simple"
+                    "$directory/initial/poses.txt" "$directory/streptav4.simple"
+                    "$directory/recvol_state01_iter*.mrc" "$directory/final_poses.txt"
+                    "$directory/BENCH/" "$work/*.mrc" "$root/preparation/original_poses.txt" "$directory/LOG" "$directory/reconstruct.log" "$root/RUN_METADATA.tsv")
+        printf '<details class="volume-path"><summary>Other useful files — Show paths</summary><p>Optional files retained on the run server; directory paths and filename patterns are shown below.</p><dl>'
+        for file_index in "${!file_labels[@]}"; do
+          printf '<dt>%s</dt><dd><code>%s</code></dd>' "${file_labels[$file_index]}" \
+            "$(printf '%s' "${file_paths[$file_index]}" | html_escape)"
+        done
+        printf '</dl></details>'
       fi
       printf '</td><td>%s' "$status"
       if [[ "$row_class" == comparison-outlier ]]; then
@@ -349,6 +415,20 @@ write_streptavidin_comparisons() {
   done
   printf '</tbody></table><p>%s/%s expected %s compared.</p>\n' "$count" "$expected" "$expected_label" >> "$out/table.html"
   printf '%s/%s\n' "$count" "$expected" > "$out/count.txt"
+  if (( pose_errors )); then
+    mkdir -p "$out/diagnostics"
+    printf 'unavailable\n' > "$out/diagnostics/status.txt"
+    if bash "$SCRIPT_DIR/.github/scripts/streptavidin_pose_diagnostics.sh" \
+      "$root" "$out/diagnostics" "$SCRIPT_DIR/make_report.sh" "$truth" \
+      > "$out/diagnostics/diagnostics.log" 2>&1 && [[ -s "$out/diagnostics/fragment.html" ]]; then
+      cat "$out/diagnostics/diagnostics.log"
+      cat "$out/diagnostics/fragment.html" >> "$out/table.html"
+      : # The diagnostics script records complete or partial availability.
+    else
+      cat "$out/diagnostics/diagnostics.log" >&2
+      printf '<p>Recovery metrics unavailable: diagnostic inputs are missing or processing failed. <a href="../comparisons/streptavidin_pose_errors/diagnostics/diagnostics.log">Diagnostic log</a>. The final-map comparison table above remains available.</p>\n' >> "$out/table.html"
+    fi
+  fi
 }
 
 has_ground_truth_for_root() {
@@ -2516,7 +2596,7 @@ HTML_INDEX_HEAD
     if is_streptavidin_root "$system_root"; then
       comparison_counts=$(cat "$(streptavidin_comparison_dir "$system_root")/count.txt")
       if [[ $(basename "$system_root") == streptavidin_pose_errors ]]; then
-        printf '<li class="report-row"><div class="report-info"><a href="reports/report_%s.html">Streptavidin — four pose-error cases</a><span>%s volumes compared against ground truth</span></div></li>\n' \
+        printf '<li class="report-row"><div class="report-info"><a href="reports/report_%s.html">Streptavidin — pose-error cases</a><span>%s volumes compared against ground truth</span></div></li>\n' \
           "$system_name" "$comparison_counts" >> "$output_dir/index.html"
         continue
       fi
@@ -2754,6 +2834,13 @@ write_pose_cont_metrics() {
   done
 }
 
+if (( compare_volume_only )); then
+  STREPTAVIDIN_EXEC="${REPORT_SIMPLE_EXEC:-${SIMPLE_PATH:+$SIMPLE_PATH/bin/}simple_exec}"
+  STREPTAVIDIN_EXEC=$(command -v "$STREPTAVIDIN_EXEC")
+  STREPTAVIDIN_EXEC=$(realpath -- "$STREPTAVIDIN_EXEC")
+  streptavidin_compare "$compare_volume" "$compare_truth" "$compare_work"
+  exit $?
+fi
 if [[ $pose_metrics_only -eq 1 ]]; then
   write_pose_cont_metrics
   exit 0

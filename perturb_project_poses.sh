@@ -8,9 +8,9 @@ if [[ $# -lt 1 || $# -gt 2 || ${1:-} == --help ]]; then
     echo 'Uses $simple_exec when set, otherwise simple_exec on PATH.'
     echo 'Requires Bash, awk and GNU coreutils (od, dd, stat, cmp, mktemp).'
     echo 'Creates INPUT_err5deg_1px.simple, INPUT_err10deg_3px.simple,'
-    echo 'INPUT_err15deg_5px.simple and INPUT_err20deg_7px.simple beside INPUT.simple.'
+    echo 'INPUT_err15deg_5px.simple, INPUT_err20deg_7px.simple and INPUT_err25deg_9px.simple.'
     echo 'Euler errors: uniform +/-angular maximum, truncated at the polar 0/180 limits.'
-    echo 'Added x/y shifts: independent uniform 0..paired pixel maximum.'
+    echo 'Added x/y shifts: independent uniform +/-paired pixel maximum.'
     [[ ${1:-} == --help ]] && exit 0
     exit 2
 fi
@@ -26,7 +26,7 @@ source_project="$source_dir/$(basename -- "$1")"
 base=${source_project%.simple}
 seed=${2:-${SIMPLE_SEED:-$(($(date +%s) + RANDOM))}}
 [[ $seed =~ ^[0-9]+$ && ${#seed} -le 18 ]] || die 'SEED must be a nonnegative integer with at most 18 digits.'
-for case_bounds in 5:1 10:3 15:5 20:7; do
+for case_bounds in 5:1 10:3 15:5 20:7 25:9; do
     maximum=${case_bounds%:*}
     shift_max=${case_bounds#*:}
     for target in "${base}_err${maximum}deg_${shift_max}px.simple" "${base}_err${maximum}deg_${shift_max}px.log"; do
@@ -113,13 +113,14 @@ encode "$work/original.txt"
 cmp -s -- "$work/original.payload" "$work/encoded.payload" || die 'Native text round trip is lossy for this project; no output written.'
 cp -- "$logfile" "$work/baseline.log"
 printf 'Random seed: %s (Park-Miller generator; independent seed + maximum per arm).\n' "$seed"
-for case_bounds in 5:1 10:3 15:5 20:7; do
+for case_bounds in 5:1 10:3 15:5 20:7 25:9; do
     maximum=${case_bounds%:*}
     shift_max=${case_bounds#*:}
     output="${base}_err${maximum}deg_${shift_max}px.simple"
     logfile="${output%.simple}.log"
     (set -o noclobber; : >"$logfile") || die "Refusing to overwrite: $logfile"
     printf 'SIMPLE_SEED=%s\nANGLE_MAX_DEG=%s\nSHIFT_MAX_PX=%s\n' "$seed" "$maximum" "$shift_max" >>"$logfile"
+    printf 'SHIFT_MIN_PX=-%s\n' "$shift_max" >>"$logfile"
     cat "$work/baseline.log" >>"$logfile"
     echo "Creating $output"
     # Explicit PRNG avoids awk rand()/srand() implementation differences.
@@ -140,7 +141,7 @@ for case_bounds in 5:1 10:3 15:5 20:7; do
                 if(pair[2] !~ /^[-+]?[0-9]+([.][0-9]*)?([eE][-+]?[0-9]+)?$/)
                     fail("Non-finite or invalid pose value")
                 value=pair[2]+0; found++
-                if(key=="x" || key=="y") value+=shift_max*uniform()
+                if(key=="x" || key=="y") value+=shift_max*(2*uniform()-1)
                 else if(key=="e2") {
                     if(value<0 || value>180) fail("Polar angle must lie in [0,180]")
                     low=value-maximum; if(low<0) low=0
@@ -184,7 +185,7 @@ for case_bounds in 5:1 10:3 15:5 20:7; do
                 if(abs(value-expected)>0.0001) fail("Pose did not survive native import: " key)
                 delta=value-old
                 if(key=="e1" || key=="e3") { delta=(delta+180)%360; if(delta<0)delta+=360; delta-=180 }
-                low=(key=="x" || key=="y") ? 0 : -maximum
+                low=(key=="x" || key=="y") ? -shift_max : -maximum
                 high=(key=="x" || key=="y") ? shift_max : maximum
                 if(delta<low-0.0001 || delta>high+0.0001) fail("Pose exceeds bound: " key)
                 if(key=="e2" && (value<0 || value>180)) fail("Polar angle outside [0,180]")
