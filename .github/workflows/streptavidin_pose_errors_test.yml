@@ -20,6 +20,7 @@ jobs:
     env:
       SIMPLE_PATH: /home/meanapanedar2/SIMPLE/build
       SIMPLE_SEED: '20261022'
+      STREPTAVIDIN_POSE_MAXITS: '12'
       RUN_DIR: ${{ github.workspace }}/ci_runs/${{ github.run_id }}_${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4

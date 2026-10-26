@@ -20,7 +20,7 @@ STREPTAVIDIN_ROOT       Dataset root, as in streptav4.sh.
 SIMPLE_SEED            Reproducible seed (default 20261022).
 STREPTAVIDIN_POSE_NPARTS  Refinement partitions (default 8).
 STREPTAVIDIN_POSE_NTHR    Threads per partition (default 4).
-STREPTAVIDIN_POSE_MAXITS  Optional iteration budget; default uses SIMPLE automatic limits.
+STREPTAVIDIN_POSE_MAXITS  Refinement iteration count (default 12).
 
 An explicit maxits also sets SIMPLE minimum iterations to that budget.
 The report distinguishes first convergence detection from the final stop.
@@ -63,8 +63,8 @@ done
 seed=${SIMPLE_SEED:-20261022}
 nparts=${STREPTAVIDIN_POSE_NPARTS:-8}
 nthr=${STREPTAVIDIN_POSE_NTHR:-4}
-maxits=${STREPTAVIDIN_POSE_MAXITS:-}
-[[ -z $maxits || $maxits =~ ^[1-9][0-9]*$ ]] || {
+maxits=${STREPTAVIDIN_POSE_MAXITS:-12}
+[[ $maxits =~ ^[1-9][0-9]*$ ]] || {
     echo 'STREPTAVIDIN_POSE_MAXITS must be a positive integer.' >&2; exit 2;
 }
 [[ $seed =~ ^[0-9]+$ && ${#seed} -le 18 ]] || {
@@ -125,7 +125,7 @@ export OMP_WAIT_POLICY=PASSIVE OPENBLAS_NUM_THREADS=1
 printf 'Run directory: %s\nExecutable: %s\nSeed: %s\n' "$run_dir" "$simple_executable" "$seed"
 printf 'source_project\t%s\nselected_particles\t%s\nexecutable\t%s\nseed\t%s\nnparts\t%s\nnthr\t%s\n' \
     "$source_project" "$selected_particles" "$simple_executable" "$seed" "$nparts" "$nthr" > "$run_dir/inputs.tsv"
-printf 'requested_maxits\t%s\nshift_error_mode\tsymmetric\n' "${maxits:-automatic}" >> "$run_dir/inputs.tsv"
+printf 'requested_maxits\t%s\nshift_error_mode\tsymmetric\n' "$maxits" >> "$run_dir/inputs.tsv"
 sha256sum "$simple_executable" "$source_project" "$selected_particles" > "$run_dir/INPUT_SHA256SUMS"
 printf 'testing_commit\t%s\n' "${GITHUB_SHA:-$(git -C "$script_dir" rev-parse HEAD 2>/dev/null || echo unavailable)}" >> "$run_dir/inputs.tsv"
 
@@ -201,8 +201,7 @@ run_science_step() {
     printf '%s\t%s\t%s\t%s\t%s\n' "$phase" "$started" "$finished" "$((finished-started))" "$code" >> STEP_TIMING.tsv
     return "$code"
 }
-refinement_budget=()
-[[ -z $maxits ]] || refinement_budget=("maxits=$maxits")
+refinement_budget=("maxits=$maxits")
 
 failed=0
 for i in "${!maxima[@]}"; do
