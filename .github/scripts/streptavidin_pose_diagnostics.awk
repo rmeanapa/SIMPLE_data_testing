@@ -1,5 +1,5 @@
 # GNU awk companion to streptavidin_pose_diagnostics.sh.
-# Bash supplies case/map/worker inventories. main() writes CSVs, HTML and five SVGs.
+# Bash supplies case/map/worker inventories. main() writes CSVs, HTML, trend/distribution SVGs and paired-particle scatter SVGs.
 # Arrays indexed by case (and iteration/particle) keep each measurement separate.
 # Native pose rows retain their order; identity fields are checked before comparison.
 # Missing supplemental evidence creates notices, while other measurements still render.
@@ -310,6 +310,37 @@ function draw_plot(kind, file, title, ytitle, xtitle, s, i, n, x, y, xmin, xmax,
 	close(file)
 }
 
+# One point per compared particle, using the same pairs as pose_disagreements.csv.
+# Equal physical axis lengths and one shared limit keep the diagonal comparable.
+function draw_pose_scatter(c, file, limit, i, x, y, colour, relation, tick, X, Y)
+{
+	print("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 520 550\" role=\"img\"><title>" esc(c) ": initial versus final angular disagreement</title><rect width=\"100%\" height=\"100%\" fill=\"white\"/><g font-family=\"sans-serif\" font-size=\"12\" fill=\"#222\">") > file
+	print("<text x=\"75\" y=\"27\" font-size=\"16\">" esc(c) ": paired angular disagreement</text>") >> file
+	if (! compared[c]) {
+		print("<text x=\"75\" y=\"85\">Diagnostic unavailable: no valid particle pairs</text></g></svg>") >> file
+		close(file)
+		return
+	}
+	for (i = 0; i <= 6; i++) {
+		tick = limit * i / 6
+		X = 75 + 360 * i / 6
+		Y = 430 - 360 * i / 6
+		printf("<path d=\"M75 %.2f H435 M%.2f 70 V430\" stroke=\"#ddd\"/><text x=\"66\" y=\"%.2f\" text-anchor=\"end\">%g</text><text x=\"%.2f\" y=\"451\" text-anchor=\"middle\">%g</text>\n", Y, X, Y + 4, tick, X, tick) >> file
+	}
+	print("<path d=\"M75 70 V430 H435\" fill=\"none\" stroke=\"#555\"/><path d=\"M75 430 L435 70\" stroke=\"#222\" stroke-dasharray=\"6 4\"/>") >> file
+	for (i = 1; i <= compared[c]; i++) {
+		x = ai[c, i]
+		y = af[c, i]
+		colour = (y < x ? colors[1] : (y > x ? colors[4] : "#777777"))
+		relation = (y < x ? "closer" : (y > x ? "farther" : "unchanged"))
+		printf("<circle class=\"pose-particle\" data-particle-row=\"%d\" cx=\"%.3f\" cy=\"%.3f\" r=\"2.2\" fill=\"%s\" fill-opacity=\"0.45\"><title>Particle row %d: initial %.6g deg, final %.6g deg; %s from original estimate</title></circle>\n", pose_row[c, i], 75 + 360 * x / limit, 430 - 360 * y / limit, colour, pose_row[c, i], x, y, relation) >> file
+	}
+	print("<text x=\"255\" y=\"478\" text-anchor=\"middle\">Initial angular disagreement (degrees)</text><text transform=\"translate(20 250) rotate(-90)\" text-anchor=\"middle\">Final angular disagreement (degrees)</text>") >> file
+	printf("<text x=\"75\" y=\"52\">%d particles; %.2f%% closer to original estimate</text>\n", compared[c], recovery[c]) >> file
+	print("<text x=\"75\" y=\"505\" fill=\"" colors[1] "\">Below: closer</text><text x=\"220\" y=\"505\" fill=\"" colors[4] "\">Above: farther</text><text x=\"365\" y=\"505\" fill=\"#777\">On: unchanged</text><text x=\"75\" y=\"531\">Original estimates; same stored frame, modulo D2.</text></g></svg>") >> file
+	close(file)
+}
+
 # GNU awk diagnostics: native pose tables/logs in, CSVs and SVGs out.
 # Entry points: main() for a report; curve_status() for native FSC samples.
 function esc(s)
@@ -326,7 +357,7 @@ function identity_row(title, s)
 	print("<tr><th>" title "</th>" cell(s) "</tr>") >> html
 }
 
-function main(file, line, p, i, j, c, dir, k, sha, commitlist, name, svg, figs, titles, kind)
+function main(file, line, p, i, j, c, dir, k, sha, commitlist, name, svg, figs, titles, kind, nfigs, limit)
 {
 	html = out "/fragment.html"
 	print("case,diagnostic") > (out "/diagnostic_notices.csv")
@@ -435,9 +466,24 @@ function main(file, line, p, i, j, c, dir, k, sha, commitlist, name, svg, figs, 
 	draw_plot("reference", out "/reference_fsc.svg", "Reference FSC of retained low-pass maps", "Resolution (A)", "Iteration")
 	draw_plot("angles", out "/pose_angle_deg.svg", "Angular agreement with original estimates", "D2 angular disagreement (degrees)", "Particle percentile")
 	draw_plot("shifts", out "/pose_shift_px.svg", "Shift agreement with original estimates", "Shift disagreement (pixels)", "Particle percentile")
+	print("<p>Per-particle scatter plots pair initial (X) with final (Y) angular disagreement. Below the diagonal means closer to the original estimate; above means farther away. Axes have equal scale and the same range in every case. All compared particles are plotted; hover for the original particle row and values. Overlapping points can hide density. These are pose-estimate disagreements, not independent truth errors.</p>") >> html
 	print("<style>.pose-figures{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.pose-figures svg{width:100%;height:auto}@media(max-width:800px){.pose-figures{grid-template-columns:1fr}}</style><div class=\"pose-figures\">") >> html
-	split("internal_fsc cfar reference_fsc pose_angle_deg pose_shift_px", figs, " ")
-	for (i = 1; i <= 5; i++) {
+	nfigs = split("internal_fsc cfar reference_fsc pose_angle_deg pose_shift_px", figs, " ")
+	limit = 0
+	for (i = 1; i <= ncases; i++) {
+		c = cases[i]
+		for (j = 1; j <= compared[c]; j++) {
+			if (ai[c, j] > limit) limit = ai[c, j]
+			if (af[c, j] > limit) limit = af[c, j]
+		}
+	}
+	limit = 15 * (int(limit / 15) + 1)
+	for (i = 1; i <= ncases; i++) {
+		name = "pose_angle_scatter_" cases[i]
+		figs[++nfigs] = name
+		draw_pose_scatter(cases[i], out "/" name ".svg", limit)
+	}
+	for (i = 1; i <= nfigs; i++) {
 		name = figs[i] ".svg"
 		print("<a href=\"" prefix name "\" title=\"Open full size\">") >> html
 		file = out "/" name
@@ -580,6 +626,7 @@ function pose_metrics(c, initial, final, n, i, k, active, d, a, b, ri, rf, oi, m
 		rotation(poses[c "f", i, "e1"], poses[c "f", i, "e2"], poses[c "f", i, "e3"], rf)
 		a = angle(oi, ri)
 		b = angle(oi, rf)
+		pose_row[c, active] = i
 		ai[c, active] = a
 		af[c, active] = b
 		if (b < a) {

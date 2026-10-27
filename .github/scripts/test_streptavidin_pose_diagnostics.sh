@@ -59,7 +59,54 @@ bash "$script_dir/streptavidin_pose_diagnostics.sh" "$work/run" "$work/report" "
 gawk -F, 'NR>1 {if($2!=2 || $5!=1 || $6!="\"yes\"" || $8!=5 || $9!=2)exit 1}' "$work/report/summary.csv"
 gawk -F, 'NR>1 {if(($4-20)^2>1e-10 || ($5-10)^2>1e-10 || $9!=100)exit 1}' "$work/report/pose_summary.csv"
 gawk -F, 'NR>1 {if($3>4 || $4>4)exit 1}' "$work/report/internal_iterations.csv"
-[[ $(find "$work/report" -maxdepth 1 -name '*.svg' | wc -l) == 5 ]]
+[[ $(find "$work/report" -maxdepth 1 -name '*.svg' | wc -l) == 10 ]]
+# Scatter points preserve paired values and original particle rows; no sorting/decimation.
+cat > "$work/scatter.awk" <<'AWK'
+BEGIN {
+    compared["paired"]=3; recovery["paired"]=100/3
+    ai["paired",1]=20; af["paired",1]=10; pose_row["paired",1]=2
+    ai["paired",2]=5; af["paired",2]=25; pose_row["paired",2]=7
+    ai["paired",3]=15; af["paired",3]=15; pose_row["paired",3]=9
+    draw_pose_scatter("paired", scatter, 30)
+    draw_pose_scatter("missing", missing, 30)
+}
+AWK
+gawk -v scatter="$work/scatter.svg" -v missing="$work/no_pairs.svg" -f "$script_dir/streptavidin_pose_diagnostics.awk" -f "$work/scatter.awk" </dev/null
+[[ $(grep -c 'class="pose-particle"' "$work/scatter.svg") == 3 ]]
+grep -q 'data-particle-row="2" cx="315.000" cy="310.000".*fill="#0072b2"' "$work/scatter.svg"
+grep -q 'data-particle-row="7" cx="135.000" cy="130.000".*fill="#d55e00"' "$work/scatter.svg"
+grep -q 'data-particle-row="9" cx="255.000" cy="250.000".*fill="#777777"' "$work/scatter.svg"
+grep -q 'no valid particle pairs' "$work/no_pairs.svg"
+for angle in 5 10 15 20 25; do
+    grep -q 'pose_angle_scatter_pose_error_'"$angle"'.svg' "$work/report/fragment.html"
+    [[ $(grep -c 'class="pose-particle"' "$work/report/pose_angle_scatter_pose_error_$angle.svg") == 1 ]]
+done
+# Exercise native pose loading, active-row filtering and shared limits end to end.
+# The independently ordered pairs would expose accidental percentile sorting.
+printf 'e1=0 e2=0 e3=0 x=0 y=0 state=0\ne1=0 e2=0 e3=0 x=0 y=0 state=1\ne1=0 e2=0 e3=0 x=0 y=0 state=1\ne1=0 e2=0 e3=0 x=0 y=0 state=1\n' > "$work/run/preparation/original_poses.txt"
+for angle in 5 10 15 20 25; do
+    dir="$work/run/01_refine3D_auto_pose_error_$angle"
+    initial=20
+    [[ $angle != 25 ]] || initial=40
+    printf 'e1=0 e2=0 e3=0 x=0 y=0 state=0\ne1=0 e2=0 e3=%s x=0 y=0 state=1\ne1=0 e2=0 e3=5 x=0 y=0 state=1\ne1=0 e2=0 e3=15 x=0 y=0 state=1\n' "$initial" > "$dir/initial/poses.txt"
+    printf 'e1=0 e2=0 e3=0 x=0 y=0 state=0\ne1=0 e2=0 e3=10 x=0 y=0 state=1\ne1=0 e2=0 e3=25 x=0 y=0 state=1\ne1=0 e2=0 e3=15 x=0 y=0 state=1\n' > "$dir/final_poses.txt"
+done
+bash "$script_dir/streptavidin_pose_diagnostics.sh" "$work/run" "$work/paired" "$work/compare.sh" "$work/truth.mrc" > "$work/paired.log"
+[[ $(wc -l < "$work/paired/pose_disagreements.csv") == 16 ]]
+for angle in 5 10 15 20 25; do
+    svg="$work/paired/pose_angle_scatter_pose_error_$angle.svg"
+    [[ $(grep -c 'class="pose-particle"' "$svg") == 3 ]]
+    # A 45-degree shared range gives eight SVG units per degree on both axes.
+    cx=235
+    initial=20
+    if [[ $angle == 25 ]]; then cx=395; initial=40; fi
+    grep -q 'data-particle-row="2" cx="'"$cx"'.000" cy="350.000".*fill="#0072b2".*Particle row 2: initial '"$initial"' deg, final 10 deg; closer' "$svg"
+    grep -q 'data-particle-row="3" cx="115.000" cy="230.000".*fill="#d55e00".*Particle row 3: initial 5 deg, final 25 deg; farther' "$svg"
+    grep -q 'data-particle-row="4" cx="195.000" cy="310.000".*fill="#777777".*Particle row 4: initial 15 deg, final 15 deg; unchanged' "$svg"
+    grep -q 'text-anchor="end">45</text>' "$svg"
+    grep -q 'text-anchor="middle">45</text>' "$svg"
+done
+gawk -F, 'NR>1 {expected=($1=="\"pose_error_25\"" ? 40 : 20); if(($2==2 && (($3-expected)^2>1e-10 || ($4-10)^2>1e-10)) || ($2==3 && (($3-5)^2>1e-10 || ($4-25)^2>1e-10)) || ($2==4 && (($3-15)^2>1e-10 || ($4-15)^2>1e-10)) || $2<2 || $2>4)exit 1}' "$work/paired/pose_disagreements.csv"
 # Entirely below and entirely above a threshold must not be reported as crossings.
 printf 'resolution_angstrom,fsc\n10,0.1\n2,0.08\n' > "$work/curve.csv"
 result=$(gawk -v mode=curve -v curve="$work/curve.csv" -f "$script_dir/streptavidin_pose_diagnostics.awk")
@@ -79,5 +126,10 @@ mkdir -p "$work/empty"
 bash "$script_dir/streptavidin_pose_diagnostics.sh" "$work/empty" "$work/missing" "$work/compare.sh" "$work/truth.mrc"
 [[ $(cat "$work/missing/status.txt") == partial ]]
 [[ $(wc -l < "$work/missing/summary.csv") == 6 ]]
+for angle in 5 10 15 20 25; do
+    svg="$work/missing/pose_angle_scatter_pose_error_$angle.svg"
+    grep -q 'no valid particle pairs' "$svg"
+    ! grep -q 'class="pose-particle"' "$svg"
+done
 rg -q 'Run identity and timing' "$work/missing/fragment.html"
 echo 'Pose diagnostics shell/awk checks passed.'
