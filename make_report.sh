@@ -2304,7 +2304,7 @@ write_fsc_comparison_table() {
   local current="$1" history="$2" limit="${REPORT_FSC_HISTORY_LIMIT:-10}"
   [[ $limit =~ ^[0-9]+$ ]] || { echo 'REPORT_FSC_HISTORY_LIMIT must be nonnegative (0 shows all runs).' >&2; return 1; }
   printf '<section class="fsc-summary" aria-labelledby="fsc-summary-title"><h2 id="fsc-summary-title">Dataset FSC history</h2>\n'
-  printf '<p>Recent runs, newest first. Resolution in Å: <span class="fsc-improved">green = improved</span>, <span class="fsc-worse">red = worse</span>; unchanged values stay uncolored. — = unavailable; * = failed run.</p>\n'
+  printf '<p>Recent runs, oldest to newest from left to right. Column headers show the report date (UTC) and SIMPLE commit. Resolution in Å: <span class="fsc-improved">green = improved</span>, <span class="fsc-worse">red = worse</span>; unchanged values stay uncolored. — = unavailable; * = failed run.</p>\n'
   awk -F '\t' -v limit="$limit" '
     function html(s) {gsub(/&/,"\\&amp;",s);gsub(/</,"\\&lt;",s);gsub(/>/,"\\&gt;",s);gsub(/"/,"\\&quot;",s);return s}
     function cell(value,older,status,d,cls,hint) {
@@ -2322,6 +2322,7 @@ write_fsc_comparison_table() {
       if(FNR==1)next
       if(!known[$1]++){runs[++n]=$1}
       a[$1,$2]=$3; b[$1,$2]=$4; status[$1,$2]=$5
+      dates[$1]=$6; commits[$1]=$7
       next
     }
     FNR>1 {datasets[++nd]=$1}
@@ -2329,13 +2330,20 @@ write_fsc_comparison_table() {
       shown=(limit==0 || limit>n) ? n : limit
       for(metric=1;metric<=2;metric++) {
         printf "<h3>FSC=%s (Å)</h3><div class=\"fsc-table-scroll\"><table><thead><tr><th>Dataset</th>",metric==1?"0.5":"0.143"
-        for(j=0;j<shown;j++)printf "<th>%s</th>",j==0?"Current":"Run −"j
+        for(j=n-shown+1;j<=n;j++) {
+          run=runs[j]
+          date=dates[run]; commit=commits[run]
+          if(date=="" || date=="unavailable" || date=="-")date="Date unavailable"
+          if(commit=="" || commit=="unavailable" || commit=="-")commit="Commit unavailable"
+          else commit=substr(commit,1,8)
+          printf "<th scope=\"col\">%s<br><code>%s</code></th>",html(date),html(commit)
+        }
         print "</tr></thead><tbody>"
         for(i=1;i<=nd;i++) {
           dataset=datasets[i];label=dataset;gsub(/_/," ",label)
           printf "<tr><th scope=\"row\"><a href=\"reports/report_%s.html\">%s</a></th>",html(dataset),html(label)
-          for(j=0;j<shown;j++) {
-            run=runs[n-j];older=(j+1<shown)?runs[n-j-1]:""
+          for(j=n-shown+1;j<=n;j++) {
+            run=runs[j];older=(j>n-shown+1)?runs[j-1]:""
             value=metric==1?a[run,dataset]:b[run,dataset]
             previous=metric==1?a[older,dataset]:b[older,dataset]
             printf "%s",cell(value,previous,status[run,dataset])
