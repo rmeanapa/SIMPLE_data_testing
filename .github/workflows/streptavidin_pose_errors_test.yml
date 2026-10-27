@@ -64,16 +64,15 @@ jobs:
             ci_runs/**/logs/streptavidin_pose_errors-*.out
             ci_runs/**/logs/streptavidin_pose_errors-*.err
             ci_runs/**/jobs.txt
+      - name: Package streptavidin_pose_errors webpage assets
+        if: always()
+        run: bash .github/scripts/package_report_site.sh "$RUN_DIR/streptavidin_pose_errors/site" "$RUN_DIR/streptavidin_pose_errors/webpage"
       - name: Upload independent streptavidin_pose_errors webpage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: streptavidin_pose_errors-report-site
-          path: |
-            ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/streptavidin_pose_errors/site/
-            !ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/streptavidin_pose_errors/site/**/*.mrc
-            !ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/streptavidin_pose_errors/site/**/*.mrcs
-            !ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/streptavidin_pose_errors/site/**/*.bin
+          path: ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/streptavidin_pose_errors/webpage/
           if-no-files-found: error
           retention-days: 31
 
@@ -90,29 +89,22 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Preserve the latest main report when available
+      - name: Restore the latest main report and all peer reports
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          mkdir site
-          artifact=$(gh api "repos/$GH_REPO/actions/artifacts?per_page=100" \
-            --jq '.artifacts | map(select(.expired == false and (.name | startswith("simple-data-sets-report-")))) | first | .id // empty')
-          if [[ -n "$artifact" ]]; then
-            gh api "repos/$GH_REPO/actions/artifacts/$artifact/zip" > main-report.zip
-            unzip -q main-report.zip -d site
-          else
-            printf '%s\n' '<a href="streptavidin_pose_errors/">Streptavidin report</a>' > site/index.html
-          fi
           bash .github/scripts/restore_report_sites.sh site streptavidin_pose_errors
           rm -rf site/streptavidin_pose_errors
       - uses: actions/download-artifact@v4
         with:
           name: streptavidin_pose_errors-report-site
           path: site/streptavidin_pose_errors
+      - name: Package and check the complete Pages site
+        run: bash .github/scripts/package_report_site.sh site pages
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: pages
       - name: Deploy streptavidin_pose_errors webpage
         id: deployment
         uses: actions/deploy-pages@v4

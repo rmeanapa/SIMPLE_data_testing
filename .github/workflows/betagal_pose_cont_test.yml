@@ -49,12 +49,15 @@ jobs:
             ci_runs/**/logs/betagal_pose_cont-*.out
             ci_runs/**/logs/betagal_pose_cont-*.err
             ci_runs/**/jobs.txt
+      - name: Package betagal_pose_cont webpage assets
+        if: always()
+        run: bash .github/scripts/package_report_site.sh "$RUN_DIR/betagal_pose_cont/site" "$RUN_DIR/betagal_pose_cont/webpage"
       - name: Upload independent betagal_pose_cont webpage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: betagal_pose_cont-report-site
-          path: ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/betagal_pose_cont/site/
+          path: ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/betagal_pose_cont/webpage/
           if-no-files-found: error
           retention-days: 31
 
@@ -70,37 +73,23 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Preserve the latest main report when available
+      - uses: actions/checkout@v4
+      - name: Restore the latest main report and all peer reports
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          mkdir site
-          artifact=$(gh api "repos/$GH_REPO/actions/artifacts?per_page=100" \
-            --jq '.artifacts | map(select(.expired == false and (.name | startswith("simple-data-sets-report-")))) | first | .id // empty')
-          if [[ -n "$artifact" ]]; then
-            gh api "repos/$GH_REPO/actions/artifacts/$artifact/zip" > main-report.zip
-            unzip -q main-report.zip -d site
-          else
-            printf '%s\n' '<a href="betagal_pose_cont/">Betagal pose-continuation report</a>' > site/index.html
-          fi
-          # Include the latest independent peer report before deploying the site.
-          peer_artifact=$(gh api "repos/$GH_REPO/actions/artifacts?per_page=100" \
-            --jq '.artifacts | map(select(.expired == false and .name == "streptavidin-report-site")) | first | .id // empty')
-          if [[ -n "$peer_artifact" ]]; then
-            gh api "repos/$GH_REPO/actions/artifacts/$peer_artifact/zip" > peer-report.zip
-            rm -rf site/streptavidin
-            mkdir -p site/streptavidin
-            unzip -q peer-report.zip -d site/streptavidin
-          fi
+          bash .github/scripts/restore_report_sites.sh site betagal_pose_cont
           rm -rf site/betagal_pose_cont
       - uses: actions/download-artifact@v4
         with:
           name: betagal_pose_cont-report-site
           path: site/betagal_pose_cont
+      - name: Package and check the complete Pages site
+        run: bash .github/scripts/package_report_site.sh site pages
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: pages
       - name: Deploy betagal_pose_cont webpage
         id: deployment
         uses: actions/deploy-pages@v4

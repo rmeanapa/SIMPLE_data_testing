@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -54,25 +55,27 @@ jobs:
         run: |
           ./make_report.sh $SIMPLE_SYSTEMS test_simulated_workflow_1jxy test_simulated_workflow_6vxx test_single_workflow_fcc test_single_workflow_wurtzite
 
+      - name: Package main webpage assets
+        run: bash .github/scripts/package_report_site.sh build report-site
+
       - name: Upload downloadable artifact
         uses: actions/upload-artifact@v4
         with:
           name: simple-data-sets-report-${{ github.run_number }}
-          path: build/
+          path: report-site/
           if-no-files-found: error
           retention-days: 31
-
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: build
 
   deploy_pages:
     name: Deploy report to GitHub Pages
     needs: build_self_hosted
     runs-on: ubuntu-latest
+    concurrency:
+      group: simple-report-pages
+      cancel-in-progress: false
     permissions:
       contents: read
+      actions: read
       pages: write
       id-token: write
 
@@ -81,6 +84,21 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: simple-data-sets-report-${{ github.run_number }}
+          path: site
+      - name: Restore all independent reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash .github/scripts/restore_report_sites.sh site main
+      - name: Package and check the complete Pages site
+        run: bash .github/scripts/package_report_site.sh site pages
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

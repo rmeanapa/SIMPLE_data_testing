@@ -45,12 +45,15 @@ jobs:
             ci_runs/**/logs/streptavidin-*.out
             ci_runs/**/logs/streptavidin-*.err
             ci_runs/**/jobs.txt
+      - name: Package streptavidin webpage assets
+        if: always()
+        run: bash .github/scripts/package_report_site.sh "$RUN_DIR/streptavidin/site" "$RUN_DIR/streptavidin/webpage"
       - name: Upload independent streptavidin webpage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: streptavidin-report-site
-          path: ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/streptavidin/site/
+          path: ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/streptavidin/webpage/
           if-no-files-found: error
           retention-days: 31
 
@@ -66,37 +69,23 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Preserve the latest main report when available
+      - uses: actions/checkout@v4
+      - name: Restore the latest main report and all peer reports
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          mkdir site
-          artifact=$(gh api "repos/$GH_REPO/actions/artifacts?per_page=100" \
-            --jq '.artifacts | map(select(.expired == false and (.name | startswith("simple-data-sets-report-")))) | first | .id // empty')
-          if [[ -n "$artifact" ]]; then
-            gh api "repos/$GH_REPO/actions/artifacts/$artifact/zip" > main-report.zip
-            unzip -q main-report.zip -d site
-          else
-            printf '%s\n' '<a href="streptavidin/">Streptavidin report</a>' > site/index.html
-          fi
-          # Include the latest independent peer report before deploying the site.
-          peer_artifact=$(gh api "repos/$GH_REPO/actions/artifacts?per_page=100" \
-            --jq '.artifacts | map(select(.expired == false and .name == "betagal_pose_cont-report-site")) | first | .id // empty')
-          if [[ -n "$peer_artifact" ]]; then
-            gh api "repos/$GH_REPO/actions/artifacts/$peer_artifact/zip" > peer-report.zip
-            rm -rf site/betagal_pose_cont
-            mkdir -p site/betagal_pose_cont
-            unzip -q peer-report.zip -d site/betagal_pose_cont
-          fi
+          bash .github/scripts/restore_report_sites.sh site streptavidin
           rm -rf site/streptavidin
       - uses: actions/download-artifact@v4
         with:
           name: streptavidin-report-site
           path: site/streptavidin
+      - name: Package and check the complete Pages site
+        run: bash .github/scripts/package_report_site.sh site pages
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: pages
       - name: Deploy streptavidin webpage
         id: deployment
         uses: actions/deploy-pages@v4
