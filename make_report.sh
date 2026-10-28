@@ -524,18 +524,24 @@ log_lookup_section() {
 resolve_report_section() {
   local section="$1"
   local match=""
+  local tracking_root="$ROOT/4_tseries_track_particles"
 
   if [[ "$section" != */* && -d "$ROOT/simulated_workflow/$section" ]]; then
     relative_to_root "$ROOT/simulated_workflow/$section"
     return 0
   fi
 
-  if [[ "$section" != */* && -d "$ROOT/4_track_particles" ]]; then
+  # Keep resolving reports produced before the commander was renamed.
+  if [[ ! -d "$tracking_root" ]]; then
+    tracking_root="$ROOT/4_track_particles"
+  fi
+
+  if [[ "$section" != */* && -d "$tracking_root" ]]; then
     while IFS= read -r match; do
       [[ -n "$match" ]] || continue
       relative_to_root "$match"
       return 0
-    done < <(find "$ROOT/4_track_particles" -type d -name "$section" | sort)
+    done < <(find "$tracking_root" -type d -name "$section" | sort)
   fi
 
   printf '%s\n' "$section"
