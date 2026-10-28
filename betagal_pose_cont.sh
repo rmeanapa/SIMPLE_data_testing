@@ -45,7 +45,7 @@ done
     echo "ERROR: no numbered solve3D output directory found" >&2
     exit 1
 }
-for input in betagal.simple recvol_state01.mrc; do
+for input in betagal.simple recvol_state01.mrc recvol_state01_even.mrc recvol_state01_odd.mrc; do
     [[ -s "$solve_dir/$input" ]] || {
         echo "ERROR: latest solve3D output is missing or empty: $solve_dir/$input" >&2
         exit 1
@@ -53,6 +53,7 @@ for input in betagal.simple recvol_state01.mrc; do
 done
 echo "Using solve3D output: $solve_dir"
 arms_root="$source_root"
+# Preserve these comparison-arm names because report history keys them by suffix.
 printf -v arm_default '%02d_refine3D_auto_pose_cont_default' "$((latest_stage + 1))"
 printf -v arm_yes '%02d_refine3D_auto_pose_cont_yes' "$((latest_stage + 2))"
 printf -v arm_only '%02d_refine3D_auto_pose_cont_only' "$((latest_stage + 3))"
@@ -61,33 +62,33 @@ for arm in "$arm_default" "$arm_yes" "$arm_only"; do
     cp -p "$solve_dir/betagal.simple" "$arms_root/$arm/betagal.simple"
 done
 
-run_refine3D_auto_arm() {
+run_refine3D_arm() {
     local arm="$1"
+    local program="$2"
     local status=0
-    shift
+    shift 2
 
     cd "$arms_root/$arm"
-    printf '>>> PROGRAM: refine3D_auto\n' > LOG
-    simple_exec "$@" >> LOG 2>&1 || status=$?
+    printf '>>> PROGRAM: %s\n' "$program" > LOG
+    simple_exec "prg=$program" "$@" >> LOG 2>&1 || status=$?
     {
-        printf ' >>> PROGRAM: refine3D_auto\n'
+        printf ' >>> PROGRAM: %s\n' "$program"
         printf ' >>> EXECUTION DIRECTORY: %s\n' "$arm"
         sed -E \
-            '/^[[:space:]]*>>> PROGRAM:[[:space:]]*refine3D_auto[[:space:]]*$/d; /^[[:space:]]*>>> EXECUTION DIRECTORY:/d' \
+            "/^[[:space:]]*>>> PROGRAM:[[:space:]]*$program[[:space:]]*$/d; /^[[:space:]]*>>> EXECUTION DIRECTORY:/d" \
             LOG
     } >> "$arms_root/LOG"
     return "$status"
 }
 
-run_refine3D_auto_arm "$arm_default" \
-    prg=refine3D_auto pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
+run_refine3D_arm "$arm_default" refine3D_auto \
+    pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
     projfile="betagal.simple" vol1="$solve_dir/recvol_state01.mrc" mkdir=no
 
-run_refine3D_auto_arm "$arm_yes" \
-    prg=refine3D_auto pose_cont=yes pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
+run_refine3D_arm "$arm_yes" refine3D_auto \
+    pose_cont=yes pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
     projfile="betagal.simple" vol1="$solve_dir/recvol_state01.mrc" mkdir=no
 
-run_refine3D_auto_arm "$arm_only" \
-    prg=refine3D_auto pose_cont=only pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
+run_refine3D_arm "$arm_only" refine3D_local \
+    pgrp=d2 mskdiam=180 nparts=10 nthr=8 \
     projfile="betagal.simple" vol1="$solve_dir/recvol_state01.mrc" mkdir=no
-

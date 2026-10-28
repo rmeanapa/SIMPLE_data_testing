@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prepare the streptav4 input used by streptav4.sh, perturb its stored poses,
-# reconstruct each perturbed project, then refine it with pose_cont=only
+# reconstruct each perturbed project, then continue it with refine3D_local
 # sequentially (32 CPUs total).
 # Angular bounds are per Euler coordinate; x/y offsets are symmetric pixels per axis.
 # No ground-truth volume is supplied to refinement.
@@ -33,7 +33,7 @@ Cases (symmetric Euler-coordinate degrees / symmetric added pixels per x,y axis)
 
 --prepare-only creates the relocated and perturbed projects without refining.
 Each arm first reconstructs recvol_state01.mrc using CC without regularization,
-then runs refine3D_auto pose_cont=only from that map and the perturbed poses.
+then runs refine3D_local from that map and the perturbed poses.
 The five arms have their own LOG, reconstruct.log, project, maps and FSC files.
 runs.tsv records the arm paths, bounds, seed, and completion status.
 For the complete report, pass RUN_DIR to make_report.sh.
@@ -221,9 +221,11 @@ for i in "${!maxima[@]}"; do
             > reconstruct.log 2>&1 || { cat reconstruct.log; exit 1; }
         cat reconstruct.log
         if [[ ! -s recvol_state01.mrc ]] || \
+            [[ ! -s recvol_state01_even.mrc ]] || \
+            [[ ! -s recvol_state01_odd.mrc ]] || \
             ! grep -q 'SIMPLE_RECONSTRUCT3D NORMAL STOP' reconstruct.log || \
             grep -qE '^ERROR!|ERROR STOP' reconstruct.log; then
-            echo 'ERROR! Starting reconstruction failed or did not produce recvol_state01.mrc' >&2
+            echo 'ERROR! Starting reconstruction failed or did not produce the merged/even/odd volume set' >&2
             exit 1
         fi
         # Immutable input checkpoint, including unfiltered map and available halves.
@@ -232,14 +234,13 @@ for i in "${!maxima[@]}"; do
         cp -- recvol_state01*.mrc initial/ || exit 1
         sha256sum initial/* > INITIAL_SHA256SUMS || exit 1
         export_poses "$arm/initial" streptav4.simple poses.txt || exit 1
-        printf '>>> PROGRAM: refine3D_auto\n'
+        printf '>>> PROGRAM: refine3D_local\n'
         # Reuse this arm's directory so final maps and FSCs stay at the paths
         # consumed by the report; retain the requested intermediate volumes.
-        run_science_step refine prg=refine3D_auto pose_cont=only \
-            pgrp=d2 mskdiam=80 cenlp=10 "nthr=$nthr" "nparts=$nparts" \
+        run_science_step refine prg=refine3D_local \
+            pgrp=d2 mskdiam=80 "nthr=$nthr" "nparts=$nparts" \
             "projfile=$project" vol1=recvol_state01.mrc "${refinement_budget[@]}" \
-            ref_pose_init=none regpass=no rec_backend=gridding pcg_solvent=no \
-            keepvol=yes mkdir=no
+            rec_backend=gridding keepvol=yes mkdir=no
     ) > "$arm/LOG" 2>&1 || status=$?
     actual_iterations=$(awk '/>>> ITERATION[[:space:]]+[0-9]+[[:space:]]*$/ {n=$NF} END {print n+0}' "$arm/LOG")
     if (( status == 0 )) && [[ -s "$arm/rec_final_state01.mrc" ]] && \
