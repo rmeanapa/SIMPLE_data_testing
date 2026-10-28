@@ -2328,12 +2328,15 @@ write_fsc_comparison_table() {
     FNR>1 {datasets[++nd]=$1}
     END {
       shown=(limit==0 || limit>n) ? n : limit
+      empty=(limit==0) ? 0 : limit-shown
       for(metric=1;metric<=2;metric++) {
         printf "<h3>FSC=%s (Å)</h3><div class=\"fsc-table-scroll\"><table><thead><tr><th>Dataset</th>",metric==1?"0.5":"0.143"
+        for(j=1;j<=empty;j++)printf "<th scope=\"col\"></th>"
         for(j=n-shown+1;j<=n;j++) {
           run=runs[j]
           date=dates[run]; commit=commits[run]
           if(date=="" || date=="unavailable" || date=="-")date="Date unavailable"
+          else sub(/[ T].*$/, "", date)
           if(commit=="" || commit=="unavailable" || commit=="-")commit="Commit unavailable"
           else commit=substr(commit,1,8)
           printf "<th scope=\"col\">%s<br><code>%s</code></th>",html(date),html(commit)
@@ -2342,6 +2345,7 @@ write_fsc_comparison_table() {
         for(i=1;i<=nd;i++) {
           dataset=datasets[i];label=dataset;gsub(/_/," ",label)
           printf "<tr><th scope=\"row\"><a href=\"reports/report_%s.html\">%s</a></th>",html(dataset),html(label)
+          for(j=1;j<=empty;j++)printf "<td></td>"
           for(j=n-shown+1;j<=n;j++) {
             run=runs[j];older=(j>n-shown+1)?runs[j-1]:""
             value=metric==1?a[run,dataset]:b[run,dataset]
