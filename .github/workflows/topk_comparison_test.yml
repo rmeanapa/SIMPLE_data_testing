@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate comparison tooling
-        run: python3 .github/scripts/test_topk_comparison.py
+        run: bash .github/scripts/test_topk_comparison.sh
       - name: Run top-k comparison on three datasets
         run: |
           mkdir -p "$RUN_DIR"
@@ -35,7 +35,7 @@ jobs:
           bash "$GITHUB_WORKSPACE/submit_topk_comparison.sh" "$RUN_DIR/topk_comparison"
       - name: Generate topk_comparison report
         if: always()
-        run: python3 .github/scripts/topk_report.py "$RUN_DIR/topk_comparison" "$RUN_DIR/topk_comparison/site"
+        run: bash .github/scripts/topk_report.sh "$RUN_DIR/topk_comparison" "$RUN_DIR/topk_comparison/site"
       - name: Upload logs and comparison report
         if: always()
         uses: actions/upload-artifact@v4

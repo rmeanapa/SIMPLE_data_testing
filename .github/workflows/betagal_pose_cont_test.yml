@@ -22,6 +22,8 @@ jobs:
       RUN_DIR: ${{ github.workspace }}/ci_runs/${{ github.run_id }}_${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validate Actions history tooling
+        run: bash .github/scripts/test_pose_cont_history.sh
       - name: Run betagal pose-continuation comparison
         run: |
           mkdir -p "$RUN_DIR"
@@ -35,7 +37,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: python3 .github/scripts/pose_cont_history.py "$RUN_DIR/betagal_pose_cont/site"
+        run: bash .github/scripts/pose_cont_history.sh "$RUN_DIR/betagal_pose_cont/site"
       - name: Upload logs and comparison report
         if: always()
         uses: actions/upload-artifact@v4
