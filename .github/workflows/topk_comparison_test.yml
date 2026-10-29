@@ -1,0 +1,97 @@
+name: Top-k reconstruction comparison CI
+
+on:
+  #push: {}
+  schedule:
+    - cron: '30 1 * * *'
+      timezone: America/New_York
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: simple-topk-campaign
+  cancel-in-progress: false
+
+jobs:
+  topk_comparison:
+    runs-on: [self-hosted, FRCE_HPC_topk]
+    timeout-minutes: 1440
+    env:
+      SIMPLE_PATH: /home/meanapanedar2/SIMPLE/build
+      RUN_DIR: ${{ github.workspace }}/ci_runs/${{ github.run_id }}_${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate comparison tooling
+        run: python3 .github/scripts/test_topk_comparison.py
+      - name: Run top-k comparison on three datasets
+        run: |
+          mkdir -p "$RUN_DIR"
+          cd "$RUN_DIR"
+          bash "$GITHUB_WORKSPACE/submit_topk_comparison.sh" "$RUN_DIR/topk_comparison"
+      - name: Generate topk_comparison report
+        if: always()
+        run: python3 .github/scripts/topk_report.py "$RUN_DIR/topk_comparison" "$RUN_DIR/topk_comparison/site"
+      - name: Upload logs and comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: topk_comparison-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ci_runs/**/topk_comparison/site/
+            ci_runs/**/topk_comparison/**/LOG
+            ci_runs/**/topk_comparison/**/campaign.json
+            ci_runs/**/topk_comparison/**/PREPARE_LOG
+            ci_runs/**/topk_comparison/**/source_recipe.sh
+            ci_runs/**/topk_comparison/logs/
+            ci_runs/**/topk_comparison/jobs.tsv
+      - name: Package topk_comparison webpage assets
+        if: always()
+        run: bash .github/scripts/package_report_site.sh "$RUN_DIR/topk_comparison/site" "$RUN_DIR/topk_comparison/webpage"
+      - name: Upload independent topk_comparison webpage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: topk_comparison-report-site
+          path: ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/topk_comparison/webpage/
+          if-no-files-found: error
+          retention-days: 31
+
+  publish_report:
+    name: Publish topk_comparison webpage
+    needs: topk_comparison
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: simple-report-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore the latest main report and all peer reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          bash .github/scripts/restore_report_sites.sh site topk_comparison
+          rm -rf site/topk_comparison
+      - uses: actions/download-artifact@v4
+        with:
+          name: topk_comparison-report-site
+          path: site/topk_comparison
+      - name: Package and check the complete Pages site
+        run: bash .github/scripts/package_report_site.sh site pages
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages
+      - name: Deploy topk_comparison webpage
+        id: deployment
+        uses: actions/deploy-pages@v4

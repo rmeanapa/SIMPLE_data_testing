@@ -22,6 +22,11 @@ if [[ ${1:-} == --compare-volume ]]; then
   compare_work=$(cd -- "$4" && pwd -P)
   set -- "$(dirname -- "$compare_volume")"
 fi
+final_metrics_only=0
+if [[ ${1:-} == --final-metrics ]]; then
+  final_metrics_only=1
+  shift
+fi
 pose_metrics_only=0
 if [[ ${1:-} == --pose-cont-metrics ]]; then
   pose_metrics_only=1
@@ -2602,6 +2607,7 @@ write_pages_site() {
 <body>
   <main>
     <h1>SIMPLE data testing reports</h1>
+    <p><a href="topk_comparison/">Nightly top-k reconstruction comparison</a></p>
     <p class="timestamp">Generated ${generated_at} · SIMPLE commit <code>${simple_commit}</code></p>
     <!-- DATASET_FSC_SUMMARY -->
     <ul>
@@ -2857,6 +2863,11 @@ if (( compare_volume_only )); then
   STREPTAVIDIN_EXEC=$(command -v "$STREPTAVIDIN_EXEC")
   STREPTAVIDIN_EXEC=$(realpath -- "$STREPTAVIDIN_EXEC")
   streptavidin_compare "$compare_volume" "$compare_truth" "$compare_work"
+  exit $?
+fi
+if (( final_metrics_only )); then
+  [[ ${#SYSTEM_ROOTS[@]} == 1 ]] || { echo "--final-metrics requires one run directory" >&2; exit 2; }
+  ROOT="${SYSTEM_ROOTS[0]}" final_volume_metrics_for_root
   exit $?
 fi
 if [[ $pose_metrics_only -eq 1 ]]; then

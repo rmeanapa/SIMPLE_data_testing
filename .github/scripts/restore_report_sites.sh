@@ -10,7 +10,7 @@ mkdir -p "$site"
 artifacts=$(gh api --paginate --slurp "repos/$GH_REPO/actions/artifacts?per_page=100")
 archive=$(mktemp)
 trap 'rm -f "$archive"' EXIT
-for slug in main streptavidin betagal_pose_cont streptavidin_pose_errors; do
+for slug in main streptavidin betagal_pose_cont streptavidin_pose_errors topk_comparison; do
     [[ $slug != "$skip" ]] || continue
     artifact=$(jq -r --arg slug "$slug" '
         [.[].artifacts[] | select(.expired == false) |
@@ -34,7 +34,7 @@ done
 if [[ ! -f "$site/index.html" ]]; then
     # First deployment may have independent reports before a main report exists.
     printf '%s\n' '<!doctype html><html lang="en"><meta charset="utf-8"><title>SIMPLE reports</title><h1>SIMPLE reports</h1><ul>' > "$site/index.html"
-    for slug in streptavidin betagal_pose_cont streptavidin_pose_errors; do
+    for slug in streptavidin betagal_pose_cont streptavidin_pose_errors topk_comparison; do
         if [[ -f "$site/$slug/index.html" || $slug == "$skip" ]]; then
             printf '<li><a href="%s/">%s</a></li>\n' "$slug" "$slug" >> "$site/index.html"
         fi
