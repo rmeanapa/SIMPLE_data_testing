@@ -16,8 +16,42 @@ done
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 api_root="${GITHUB_API_URL:-https://api.github.com}/repos/$GH_REPO"
-# gh handles signed archive redirects without forwarding the API token.
-pages() { gh api --paginate --slurp "$api_root/$1"; }
+api_get() {
+    # curl drops Authorization when GitHub redirects archive downloads to its
+    # signed object-storage URL. Do not add --location-trusted here.
+    curl --fail --silent --show-error --location \
+        --header 'Accept: application/vnd.github+json' \
+        --header "Authorization: Bearer $GH_TOKEN" \
+        --header 'X-GitHub-Api-Version: 2022-11-28' "$@"
+}
+pages() {
+    local url="$api_root/$1" headers body separator=''
+    printf '['
+    while [[ -n $url ]]; do
+        headers=$(mktemp "$work/api-headers.XXXXXXXX") || return
+        body=$(mktemp "$work/api-page.XXXXXXXX") || return
+        api_get --dump-header "$headers" "$url" > "$body" || return
+        jq -e 'type=="object"' "$body" >/dev/null || return
+        printf '%s' "$separator"
+        cat "$body"
+        separator=,
+        url=$(tr -d '\r' < "$headers" | awk '
+            tolower($1)=="link:" {
+                sub(/^[^:]*:[[:space:]]*/, "")
+                count=split($0, links, ",")
+                for (i=1; i<=count; i++) {
+                    if (links[i] ~ /rel="next"/) {
+                        sub(/^[[:space:]]*</, "", links[i])
+                        sub(/>.*/, "", links[i])
+                        print links[i]
+                        exit
+                    }
+                }
+            }
+        ')
+    done
+    printf ']\n'
+}
 metrics_json() {
     jq -Rn '[inputs | split("\t") | select(.[0]=="default" or .[0]=="yes" or .[0]=="only") |
         {key:.[0],value:{fsc05:(if .[1]=="" then null else .[1] end),
@@ -35,7 +69,7 @@ legacy_metrics() {
     artifact=$(jq -r '[.[] | select(.name|startswith("betagal_pose_cont-")) |
         select(.name!="betagal_pose_cont-report-site")] | first | .id // empty' "$artifacts")
     if [[ -z $artifact ]]; then printf '{}\n'; return; fi
-    gh api "$api_root/actions/artifacts/$artifact/zip" > "$directory/legacy.zip" || return
+    api_get "$api_root/actions/artifacts/$artifact/zip" > "$directory/legacy.zip" || return
     unzip -Z -1 "$directory/legacy.zip" > "$directory/members" || return
     while IFS= read -r name; do
         for arm in default yes only; do
@@ -69,7 +103,7 @@ while IFS= read -r row; do
         jq '[.[].artifacts[] | select(.expired==false)]' "$directory/artifact-pages.json" > "$directory/artifacts.json"
         report=$(jq -r '[.[] | select(.name=="betagal_pose_cont-report-site")] | first | .id // empty' "$directory/artifacts.json")
         if [[ -n $report ]]; then
-            if gh api "$api_root/actions/artifacts/$report/zip" > "$directory/report.zip" && unzip -Z -1 "$directory/report.zip" > "$directory/members"; then
+            if api_get "$api_root/actions/artifacts/$report/zip" > "$directory/report.zip" && unzip -Z -1 "$directory/report.zip" > "$directory/members"; then
                 if grep -qxF pose_cont_history.json "$directory/members"; then
                     member "$directory/report.zip" pose_cont_history.json > "$directory/previous.json"
                     if jq -e . "$directory/previous.json" >/dev/null; then
@@ -108,7 +142,7 @@ jq --slurpfile runs "$work/runs.json" 'with_entries(. as $entry |
     "$work/records.json" > "$work/filtered.json"
 printf 'null\n' > "$work/current.json"
 if [[ -n ${GITHUB_RUN_ID:-} ]]; then
-    gh api "$api_root/actions/runs/$GITHUB_RUN_ID" > "$work/current-run.json"
+    api_get "$api_root/actions/runs/$GITHUB_RUN_ID" > "$work/current-run.json"
     current_metrics='{}'
     [[ ! -f $site/pose_cont_metrics.tsv ]] || current_metrics=$(metrics_json "$site/pose_cont_metrics.tsv")
     jq --argjson metrics "$current_metrics" '{id,run_number,run_attempt,created_at,head_sha,html_url,metrics:$metrics}' \
