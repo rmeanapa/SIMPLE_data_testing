@@ -29,7 +29,7 @@ if [[ -z "$simple_build" ]]; then
 fi
 simple_build=$(cd -- "$simple_build" && pwd -P)
 partition=norm
-systems=(betagal apof clc motab proteasome trpm4 nanox)
+systems=(betagal apof proteasome nanox)
 test_cases=(simulated_workflow:6vxx simulated_workflow:1jxy single_workflow:fcc single_workflow:wurtzite)
 if [[ -n "$selected_system" ]]; then
     partition=csbdevel
