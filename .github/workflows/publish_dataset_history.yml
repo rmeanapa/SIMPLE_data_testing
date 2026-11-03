@@ -1,0 +1,66 @@
+name: Recover and publish dataset FSC history
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: simple-report-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check FSC history recovery
+        run: bash .github/scripts/test_dataset_fsc_history.sh
+
+      - name: Restore latest dataset report and recover history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh api --paginate --slurp "repos/$GH_REPO/actions/artifacts?per_page=100" > artifacts.json
+          artifact=$(jq -r '[.[].artifacts[] | select(.expired == false) |
+            select(.name | startswith("simple-data-sets-report-"))] |
+            max_by([.created_at, .id]) | .id // empty' artifacts.json)
+          [[ -n "$artifact" ]] || { echo 'No retained dataset report artifact'; exit 1; }
+          gh api "repos/$GH_REPO/actions/artifacts/$artifact/zip" > report.zip
+          bash .github/scripts/package_report_site.sh report.zip site
+          bash make_report.sh --recover-fsc-history site
+
+      # Keep the corrected main report available to other independent publishers.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: simple-data-sets-report-recovered-${{ github.run_id }}
+          path: site/
+          if-no-files-found: error
+          retention-days: 31
+
+      - name: Restore independent reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash .github/scripts/restore_report_sites.sh site main
+
+      - name: Package complete Pages site
+        run: bash .github/scripts/package_report_site.sh site pages
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -12,6 +12,12 @@ set -euo pipefail
 
 # Used when backfilling historical Actions logs; share the report's FSC parser.
 # Reuse the exact final-map comparison for retained iteration maps.
+recover_history_only=0
+if [[ ${1:-} == --recover-fsc-history ]]; then
+  [[ $# == 2 ]] || { echo 'Usage: make_report.sh --recover-fsc-history REPORT_SITE' >&2; exit 2; }
+  recover_history_only=1
+  shift
+fi
 compare_volume_only=0
 if [[ ${1:-} == --compare-volume ]]; then
   [[ $# == 4 ]] || { echo 'Usage: make_report.sh --compare-volume MAP REFERENCE OUTPUT_DIR' >&2; exit 2; }
@@ -2257,6 +2263,34 @@ append_fsc_snapshot() {
   awk -F '\t' -v id="$identity" 'NR>1 {print id "\t" $0}' "$snapshot" >> "$history"
 }
 
+# Merge recovered report snapshots with live history. A snapshot can have a
+# content-hash ID in an old report and an Actions ID in the recovered archive;
+# timestamp/commit/dataset identify the same measurement in both. Live data wins.
+merge_fsc_history() {
+  local recovered="$1" live="$2" output="$3"
+  valid_fsc_history "$recovered" || { echo "Invalid recovered FSC history: $recovered" >&2; return 1; }
+  valid_fsc_history "$live" || { echo "Invalid live FSC history: $live" >&2; return 1; }
+  {
+    fsc_history_header
+    awk -F '\t' 'BEGIN {OFS="\t"}
+      FNR==1 {next}
+      {
+        snapshot=$6 SUBSEP $7
+        key=snapshot SUBSEP $2
+        run[snapshot]=$1
+        row[key]=$0
+        group[key]=snapshot
+      }
+      END {
+        for(key in row) {
+          split(row[key], fields, "\t")
+          print run[group[key]],fields[2],fields[3],fields[4],fields[5],fields[6],fields[7]
+        }
+      }
+    ' "$recovered" "$live" | LC_ALL=C sort -t $'\t' -k6,6 -k7,7 -k2,2
+  } > "$output"
+}
+
 # Keep the complete history in oldest-to-newest run order. Older reports can
 # supply their two snapshots until a published history file becomes available.
 prepare_fsc_history() {
@@ -2291,6 +2325,13 @@ prepare_fsc_history() {
         append_fsc_snapshot "$scratch.download" "$scratch"
       fi
     fi
+  fi
+  local recovered
+  recovered="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/.github/data/fsc_history.tsv"
+  if [[ -f "$recovered" ]]; then
+    merge_fsc_history "$recovered" "$scratch" "$scratch.merged"
+    mv -- "$scratch.merged" "$scratch"
+    FSC_HISTORY_FULL=1
   fi
   mv -- "$scratch" "$history"
   rm -f -- "$scratch.download"
@@ -2371,6 +2412,33 @@ write_fsc_comparison_table() {
   ' "$history" "$current"
   printf '</section>\n'
 }
+
+# Refresh an existing report without running SIMPLE or changing its measurements.
+recover_fsc_history_site() (
+  local site="$1" scratch seed
+  for name in index.html fsc_summary.tsv fsc_history.tsv; do
+    [[ -f "$site/$name" ]] || { echo "Missing report file: $site/$name" >&2; return 1; }
+  done
+  valid_fsc_snapshot "$site/fsc_summary.tsv" || { echo 'Invalid current FSC snapshot' >&2; return 1; }
+  seed="$SCRIPT_DIR/.github/data/fsc_history.tsv"
+  scratch=$(mktemp -d "$site/.recover-history.XXXXXXXX")
+  trap 'rm -rf -- "$scratch"' EXIT
+  merge_fsc_history "$seed" "$site/fsc_history.tsv" "$scratch/fsc_history.tsv"
+  write_fsc_comparison_table "$site/fsc_summary.tsv" "$scratch/fsc_history.tsv" > "$scratch/table.html"
+  awk -v fragment="$scratch/table.html" '
+    /^[[:space:]]*<section class="fsc-summary"/ {
+      while((getline line < fragment)>0)print line
+      close(fragment); replacing=1; count++; next
+    }
+    replacing {if($0 ~ /<\/section>/)replacing=0; next}
+    {print}
+    END {if(count!=1 || replacing)exit 1}
+  ' "$site/index.html" > "$scratch/index.html" || { echo 'Expected one complete FSC history section' >&2; return 1; }
+  chmod 644 "$scratch/index.html" "$scratch/fsc_history.tsv"
+  mv -- "$scratch/fsc_history.tsv" "$site/fsc_history.tsv"
+  mv -- "$scratch/index.html" "$site/index.html"
+  echo "Recovered FSC history written to: $site/fsc_history.tsv"
+)
 
 write_pages_site() {
   local output_dir="$1"
@@ -2858,6 +2926,10 @@ write_pose_cont_metrics() {
   done
 }
 
+if (( recover_history_only )); then
+  recover_fsc_history_site "${SYSTEM_ROOTS[0]}"
+  exit $?
+fi
 if (( compare_volume_only )); then
   STREPTAVIDIN_EXEC="${REPORT_SIMPLE_EXEC:-${SIMPLE_PATH:+$SIMPLE_PATH/bin/}simple_exec}"
   STREPTAVIDIN_EXEC=$(command -v "$STREPTAVIDIN_EXEC")
