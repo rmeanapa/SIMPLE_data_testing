@@ -110,6 +110,9 @@ display_name_for_root() {
     test_single_workflow_fcc)
       printf '%s\n' 'SINGLE workflow — FCC Pt'
       ;;
+    test_single_workflow_alloy)
+      printf '%s\n' 'SINGLE workflow — random-site FCC Pt/Ni'
+      ;;
     test_single_workflow_wurtzite)
       printf '%s\n' 'SINGLE workflow — wurtzite CdSe'
       ;;
@@ -2382,7 +2385,7 @@ write_fsc_comparison_table() {
       shown=(limit==0 || limit>n) ? n : limit
       empty=(limit==0) ? 0 : limit-shown
       for(metric=1;metric<=2;metric++) {
-        printf "<h3>FSC=%s (Å)</h3><div class=\"fsc-table-scroll\"><table><thead><tr><th>Dataset</th>",metric==1?"0.5":"0.143"
+        printf "<h3>FSC=%s (Å)</h3><div class=\"fsc-table-scroll\"><table><thead><tr><th>Dataset</th>",(metric==1?"0.5":"0.143")
         for(j=1;j<=empty;j++)printf "<th scope=\"col\"></th>"
         for(j=n-shown+1;j<=n;j++) {
           run=runs[j]
@@ -2708,7 +2711,11 @@ HTML_INDEX_HEAD
     while IFS= read -r section; do
       sections+=("$section")
     done < <(log_sections_for_root | sort_sections)
-    timing_stats=$(timing_stats_for_sections "${sections[@]}")
+    if ((${#sections[@]})); then
+      timing_stats=$(timing_stats_for_sections "${sections[@]}")
+    else
+      timing_stats="0|0"
+    fi
     timing_count=${timing_stats%%|*}
     timing_total=${timing_stats#*|}
     if [[ $timing_count -gt 0 ]]; then

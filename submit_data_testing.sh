@@ -30,7 +30,7 @@ fi
 simple_build=$(cd -- "$simple_build" && pwd -P)
 partition=norm
 systems=(betagal apof proteasome nanox)
-test_cases=(simulated_workflow:6vxx simulated_workflow:1jxy single_workflow:fcc single_workflow:wurtzite)
+test_cases=(simulated_workflow:6vxx simulated_workflow:1jxy single_workflow:fcc single_workflow:alloy single_workflow:wurtzite)
 if [[ -n "$selected_system" ]]; then
     partition=csbdevel
     systems=("$selected_system")
