@@ -23,4 +23,4 @@ simple_exec prg=update_project "projfile=$project" \
 
 exec simple_exec prg=solve3D pgrp=d2 cavg_ini=no cenlp=10 mskdiam=80 \
     nthr=4 nparts=8 nthr_ini3D=32 "projfile=$runtime_project" balance=none \
-    "nrestarts=$restarts" rec_backend=gridding pcg_solvent=no
+    "nrestarts=$restarts" rec_backend=gridding
