@@ -51,7 +51,7 @@ grep -q 'Unsafe artifact path' "$work/error"
 printf '[{"artifacts":[]},{"artifacts":[' > "$work/artifacts.json"
 separator=''
 id=10
-for slug in main streptavidin betagal_pose_cont streptavidin_pose_errors topk_comparison; do
+for slug in main streptavidin betagal_pose_cont streptavidin_pose_errors topk_comparison snr005_nightly; do
     name="$slug-report-site"
     [[ $slug != main ]] || name=simple-data-sets-report-42
     printf '%s{"id":%s,"name":"%s","expired":true,"created_at":"2026-10-28"},' "$separator" "$((id+100))" "$name" >> "$work/artifacts.json"
@@ -81,7 +81,7 @@ gh() {
 }
 export -f gh
 index=0
-for own in main main streptavidin betagal_pose_cont streptavidin_pose_errors topk_comparison; do
+for own in main main streptavidin betagal_pose_cont streptavidin_pose_errors topk_comparison snr005_nightly; do
     site="$work/site-$index"
     if [[ $own == main ]]; then
         mkdir "$site"
@@ -95,7 +95,7 @@ for own in main main streptavidin betagal_pose_cont streptavidin_pose_errors top
     package "$site" "$work/pages-$index"
     expected='latest main'; [[ $own != main ]] || expected='current main'
     [[ $(cat "$work/pages-$index/index.html") == "$expected" ]] || fail 'Incorrect main report'
-    for slug in streptavidin betagal_pose_cont streptavidin_pose_errors topk_comparison; do
+    for slug in streptavidin betagal_pose_cont streptavidin_pose_errors topk_comparison snr005_nightly; do
         expected="latest $slug"; [[ $own != "$slug" ]] || expected="current $slug"
         [[ $(cat "$work/pages-$index/$slug/index.html") == "$expected" ]] || fail "Lost $slug"
     done

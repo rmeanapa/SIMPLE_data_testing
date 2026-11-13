@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Submit the normal datasets, or one independent dataset campaign.
-# Usage: bash ./submit_data_testing.sh [streptavidin|betagal_pose_cont|streptavidin_pose_errors] [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]
+# Usage: bash ./submit_data_testing.sh [streptavidin|betagal_pose_cont|streptavidin_pose_errors|snr005] [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]
 # Defaults: checkout containing this script, SIMPLE_BUILD=$SIMPLE_PATH.
 # Dataset scripts run in the current directory; results, logs and jobs.txt stay there.
 # Load the SIMPLE runtime modules before submission; Slurm inherits this environment.
-# Optional environment: SIMPLE_TEST_MEMORY (default 128G), SIMPLE_TEST_TIME
-# (default 24:00:00), SIMPLE_TEST_ACCOUNT (default cluster account).
-# Each node must support 80 CPUs: the existing scripts use nparts=10 nthr=8.
+# Optional environment: SIMPLE_TEST_PARTITION, SIMPLE_TEST_MEMORY, SIMPLE_TEST_TIME,
+# and SIMPLE_TEST_ACCOUNT. The defaults are 80 CPUs/128G/24 hours for the normal
+# datasets and 16 CPUs/64G/12 hours for snr005.
 # Input datasets must be available at the /mnt/beegfs paths in those scripts.
 # Waits for every job and exits nonzero if any submission or job fails.
 # Uses an existing build; does not build SIMPLE or publish the Pages report.
@@ -14,10 +14,10 @@ set -euo pipefail
 
 selected_system=""
 case "${1:-}" in
-    streptavidin|betagal_pose_cont|streptavidin_pose_errors) selected_system=$1; shift ;;
+    streptavidin|betagal_pose_cont|streptavidin_pose_errors|snr005) selected_system=$1; shift ;;
 esac
 if (( $# > 2 )); then
-    echo "Usage: $0 [streptavidin|betagal_pose_cont|streptavidin_pose_errors] [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]" >&2
+    echo "Usage: $0 [streptavidin|betagal_pose_cont|streptavidin_pose_errors|snr005] [DATA_TESTING_CHECKOUT [SIMPLE_BUILD]]" >&2
     exit 2
 fi
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
@@ -29,12 +29,21 @@ if [[ -z "$simple_build" ]]; then
 fi
 simple_build=$(cd -- "$simple_build" && pwd -P)
 partition=norm
+job_cpus=80
+job_memory=${SIMPLE_TEST_MEMORY:-128G}
+job_time=${SIMPLE_TEST_TIME:-24:00:00}
 systems=(betagal apof proteasome nanox)
 test_cases=(simulated_workflow:6vxx simulated_workflow:1jxy single_workflow:fcc single_workflow:alloy single_workflow:wurtzite)
 if [[ -n "$selected_system" ]]; then
     partition=csbdevel
     systems=("$selected_system")
     test_cases=()
+fi
+if [[ "$selected_system" == snr005 ]]; then
+    partition=${SIMPLE_TEST_PARTITION:-norm}
+    job_cpus=16
+    job_memory=${SIMPLE_TEST_MEMORY:-64G}
+    job_time=${SIMPLE_TEST_TIME:-12:00:00}
 fi
 if [[ "$selected_system" == streptavidin ]]; then
     systems=()
@@ -89,8 +98,8 @@ for system in "${systems[@]}"; do
         cp -- "$data_checkout/$system.sh" "$run_dir/$system.sh"
     fi
     submit_and_wait "$system" --parsable --partition="$partition" --nodes=1 --ntasks=1 \
-        --cpus-per-task=80 --mem="${SIMPLE_TEST_MEMORY:-128G}" \
-        --time="${SIMPLE_TEST_TIME:-24:00:00}" "${account_args[@]}" \
+        --cpus-per-task="$job_cpus" --mem="$job_memory" \
+        --time="$job_time" "${account_args[@]}" \
         --job-name="simple-$system" --chdir="$run_dir" --export=ALL \
         --output="$run_dir/logs/$system-%j.out" \
         --error="$run_dir/logs/$system-%j.err" \

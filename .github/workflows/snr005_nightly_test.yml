@@ -1,0 +1,99 @@
+name: SNR 0.05 three-state nightly CI
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+      timezone: America/New_York
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: simple-snr005-campaign
+  cancel-in-progress: false
+
+jobs:
+  snr005_nightly:
+    runs-on: [self-hosted, CSB_HPC_snr005]
+    timeout-minutes: 1440
+    env:
+      SIMPLE_PATH: /home/meanapanedar2/SIMPLE/build
+      SNR005_PACKAGE: /mnt/beegfs/elmlund/snr005_nightly_package
+      SIMPLE_TEST_PARTITION: norm
+      SIMPLE_TEST_TIME: '12:00:00'
+      SIMPLE_TEST_MEMORY: 64G
+      SIMPLE_SEED: '20261113'
+      RUN_DIR: ${{ github.workspace }}/ci_runs/${{ github.run_id }}_${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate SNR005 tooling
+        run: bash .github/scripts/test_snr005_report.sh
+      - name: Submit the benchmark to Slurm
+        run: |
+          mkdir -p "$RUN_DIR"
+          cd "$RUN_DIR"
+          bash "$GITHUB_WORKSPACE/submit_data_testing.sh" snr005
+      - name: Generate SNR005 report
+        if: always()
+        run: REPORT_SITE_DIR="$RUN_DIR/snr005/site" bash ./make_report.sh "$RUN_DIR/snr005"
+      - name: Upload scheduler logs and benchmark metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snr005_nightly-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ci_runs/**/snr005/site/
+            ci_runs/**/snr005/LOG
+            ci_runs/**/logs/snr005-*.out
+            ci_runs/**/logs/snr005-*.err
+            ci_runs/**/jobs.txt
+      - name: Package SNR005 webpage assets
+        if: always()
+        run: bash .github/scripts/package_report_site.sh "$RUN_DIR/snr005/site" "$RUN_DIR/snr005/webpage"
+      - name: Upload independent SNR005 webpage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snr005_nightly-report-site
+          path: ci_runs/${{ github.run_id }}_${{ github.run_attempt }}/snr005/webpage/
+          if-no-files-found: error
+          retention-days: 31
+
+  publish_report:
+    name: Publish SNR005 webpage
+    needs: snr005_nightly
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: simple-report-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore the latest main report and all peer reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          bash .github/scripts/restore_report_sites.sh site snr005_nightly
+          rm -rf site/snr005_nightly
+      - uses: actions/download-artifact@v4
+        with:
+          name: snr005_nightly-report-site
+          path: site/snr005_nightly
+      - name: Package and check the complete Pages site
+        run: bash .github/scripts/package_report_site.sh site pages
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages
+      - name: Deploy SNR005 webpage
+        id: deployment
+        uses: actions/deploy-pages@v4

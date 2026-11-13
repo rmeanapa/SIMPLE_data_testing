@@ -107,6 +107,9 @@ html_escape() {
 
 display_name_for_root() {
   case "$(basename "$1")" in
+    snr005)
+      printf '%s\n' 'Three-state SNR 0.05 benchmark'
+      ;;
     test_single_workflow_fcc)
       printf '%s\n' 'SINGLE workflow — FCC Pt'
       ;;
@@ -127,6 +130,69 @@ is_streptavidin_root() {
     streptavidin|streptav4|streptavin|streptavidin_pose_errors) return 0 ;;
   esac
   [[ -f "$1/8_select_particles/streptav4.simple" ]]
+}
+
+is_snr005_root() {
+  [[ $(basename "$1") == snr005 ]]
+}
+
+snr005_comparison_dir() {
+  printf '%s/comparisons/snr005\n' "$PAGES_OUTPUT_DIR"
+}
+
+write_snr005_comparison() {
+  local root="$1" package out solve_dir final_state score state_file stage
+  local accuracy ari recall populations inactive verdict file
+  local solve_dirs=() final_states=()
+
+  package=${REPORT_SNR005_PACKAGE:-${SNR005_PACKAGE:-/mnt/beegfs/elmlund/snr005_nightly_package}}
+  out=$(snr005_comparison_dir)
+  mkdir -p "$out"
+  printf 'scope\taccuracy\tari\trecall\tpopulations\tinactive\tverdict\tfile\n' > "$out/results.tsv"
+
+  while IFS= read -r solve_dir; do solve_dirs+=("$solve_dir"); done < <(
+    find "$root" -mindepth 1 -maxdepth 1 -type d -name '*_solve3D' -print | sort -V
+  )
+  if [[ ${#solve_dirs[@]} -gt 0 && -r "$package/tools/acc3.py" && -r "$package/data/labels_f05.txt" ]]; then
+    solve_dir=${solve_dirs[${#solve_dirs[@]}-1]}
+    while IFS= read -r final_state; do final_states+=("$final_state"); done < <(
+      find "$solve_dir" -maxdepth 1 -type f -name 'states_iter*.txt' -print | sort -V
+    )
+    if [[ ${#final_states[@]} -gt 0 ]]; then
+      final_state=${final_states[${#final_states[@]}-1]}
+      if score=$(python3 -I "$package/tools/acc3.py" "$final_state" \
+          --truth "$package/data/labels_f05.txt" --tsv); then
+        printf 'final\t%s\t%s\n' "$score" "${final_state#"$root"/}" >> "$out/results.tsv"
+      fi
+    fi
+    while IFS= read -r state_file; do
+      stage=${state_file##*/states_stage}; stage=${stage%.txt}
+      [[ $stage != 0 ]] || continue
+      if score=$(python3 -I "$package/tools/acc3.py" "$state_file" \
+          --truth "$package/data/labels_f05.txt" --tsv); then
+        printf 'stage %s\t%s\t%s\n' "$stage" "$score" "${state_file#"$root"/}" >> "$out/results.tsv"
+      fi
+    done < <(find "$solve_dir" -maxdepth 1 -type f -name 'states_stage*.txt' -print | sort -V)
+  fi
+
+  {
+    printf '<section><h2>Three-state recovery against simulation truth</h2>\n'
+    printf '<p>Found states are matched one-to-one to the three true states. Separated requires accuracy ≥ 0.90 and recall ≥ 0.75 for every state; partial requires accuracy ≥ 0.75 or two recovered states.</p>\n'
+    printf '<table><thead><tr><th>Result</th><th>Accuracy</th><th>ARI</th><th>Recall (states 1/2/3)</th><th>Found populations</th><th>Inactive</th><th>Verdict</th></tr></thead><tbody>\n'
+    if [[ $(wc -l < "$out/results.tsv") -eq 1 ]]; then
+      printf '<tr><td colspan="7">No score is available. Inspect the workflow and Slurm logs below.</td></tr>\n'
+    else
+      while IFS=$'\t' read -r scope accuracy ari recall populations inactive verdict file; do
+        [[ $scope != scope ]] || continue
+        printf '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td><strong>%s</strong></td></tr>\n' \
+          "$(printf '%s' "$scope" | html_escape)" "$(printf '%s' "$accuracy" | html_escape)" \
+          "$(printf '%s' "$ari" | html_escape)" "$(printf '%s' "$recall" | html_escape)" \
+          "$(printf '%s' "$populations" | html_escape)" "$(printf '%s' "$inactive" | html_escape)" \
+          "$(printf '%s' "$verdict" | html_escape)"
+      done < "$out/results.tsv"
+    fi
+    printf '</tbody></table><p><a href="../comparisons/snr005/results.tsv">Download metrics TSV</a></p></section>\n'
+  } > "$out/table.html"
 }
 
 streptavidin_comparison_dir() {
@@ -1876,6 +1942,10 @@ append_system_report() {
     printf '<p>SIMPLE test run</p>\n'
   } >> "$OUTPUT"
 
+  if is_snr005_root "$system_root"; then
+    cat "$(snr005_comparison_dir)/table.html" >> "$OUTPUT"
+  fi
+
   append_timing_summary "${sorted_sections[@]}"
 
   for section in "${sorted_sections[@]}"; do
@@ -2493,6 +2563,8 @@ write_pages_site() {
   for system_root in "${original_roots[@]}"; do
     if is_streptavidin_root "$system_root"; then
       write_streptavidin_comparisons "$system_root"
+    elif is_snr005_root "$system_root"; then
+      write_snr005_comparison "$system_root"
     fi
   done
 
@@ -2510,7 +2582,8 @@ write_pages_site() {
   # Standalone comparison URLs open directly on the full results page.
   if [[ ${#original_roots[@]} -eq 1 ]]; then
     if is_streptavidin_root "${original_roots[0]}" || \
-        [[ "$(basename "${original_roots[0]}")" == betagal_pose_cont ]]; then
+        [[ "$(basename "${original_roots[0]}")" == betagal_pose_cont ]] || \
+        is_snr005_root "${original_roots[0]}"; then
       sed 's|href="../comparisons/|href="comparisons/|g' "$report_file" > "$output_dir/index.html"
       echo "Pages results written to: $output_dir/index.html"
       return 0
@@ -2956,4 +3029,9 @@ fi
 write_pages_site "$PAGES_OUTPUT_DIR"
 if [[ ${#SYSTEM_ROOTS[@]} -eq 1 && $(basename "${SYSTEM_ROOTS[0]}") == betagal_pose_cont ]]; then
   write_pose_cont_metrics > "$PAGES_OUTPUT_DIR/pose_cont_metrics.tsv"
+fi
+if [[ ${#SYSTEM_ROOTS[@]} -eq 1 ]] && is_snr005_root "${SYSTEM_ROOTS[0]}"; then
+  snr005_verdict=$(awk -F '\t' '$1=="final" {print $7; exit}' \
+    "$(snr005_comparison_dir)/results.tsv")
+  [[ $snr005_verdict == separated || $snr005_verdict == partial ]]
 fi
