@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Render the benchmark package's historical tables independently of nightly scores."""
-from __future__ import annotations
 import html
 import re
 from pathlib import Path
@@ -12,7 +11,7 @@ def esc(value):
     return html.escape(str(value), quote=True)
 
 
-def reference_tables(package: Path, site: Path) -> list[str]:
+def reference_tables(package: Path, site: Path) -> list:
     """Keep the package's documented tables, including stopped-run caveats."""
     readme = package / "README.md"
     if not (package / "results" / "summary.tsv").is_file() or not readme.is_file():
