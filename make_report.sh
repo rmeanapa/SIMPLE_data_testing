@@ -140,14 +140,46 @@ snr005_comparison_dir() {
   printf '%s/comparisons/snr005\n' "$PAGES_OUTPUT_DIR"
 }
 
+snr005_score() {
+  local package="$1" labels="$2"
+
+  # The packaged scorer uses math.comb (Python 3.8). Supply it before loading
+  # the unchanged scorer on SIMPLE's supported Python 3.7 runtime.
+  python3 -I - "$package/tools/acc3.py" "$labels" \
+    --truth "$package/data/labels_f05.txt" --tsv <<'PY'
+import math
+import runpy
+import sys
+
+if not hasattr(math, 'comb'):
+    def comb(n, k):
+        if n < 0 or k < 0:
+            raise ValueError('n and k must be nonnegative')
+        if k > n:
+            return 0
+        k = min(k, n - k)
+        value = 1
+        for i in range(1, k + 1):
+            value = value * (n - k + i) // i
+        return value
+    math.comb = comb
+
+scorer = sys.argv[1]
+sys.argv = [scorer] + sys.argv[2:]
+runpy.run_path(scorer, run_name='__main__')
+PY
+}
+
 write_snr005_comparison() {
-  local root="$1" package out solve_dir final_state score state_file stage
+  local root="$1" package out errors solve_dir final_state score state_file stage
   local accuracy ari recall populations inactive verdict file
   local solve_dirs=() final_states=()
 
   package=${REPORT_SNR005_PACKAGE:-${SNR005_PACKAGE:-/mnt/beegfs/elmlund/snr005_nightly_package}}
   out=$(snr005_comparison_dir)
   mkdir -p "$out"
+  errors="$out/score_errors.log"
+  : > "$errors"
   printf 'scope\taccuracy\tari\trecall\tpopulations\tinactive\tverdict\tfile\n' > "$out/results.tsv"
 
   while IFS= read -r solve_dir; do solve_dirs+=("$solve_dir"); done < <(
@@ -156,23 +188,27 @@ write_snr005_comparison() {
   if [[ ${#solve_dirs[@]} -gt 0 && -r "$package/tools/acc3.py" && -r "$package/data/labels_f05.txt" ]]; then
     solve_dir=${solve_dirs[${#solve_dirs[@]}-1]}
     while IFS= read -r final_state; do final_states+=("$final_state"); done < <(
-      find "$solve_dir" -maxdepth 1 -type f -name 'states_iter*.txt' -print | sort -V
+      find "$solve_dir" -type f -name 'states_iter*.txt' -print | sort -V
     )
     if [[ ${#final_states[@]} -gt 0 ]]; then
       final_state=${final_states[${#final_states[@]}-1]}
-      if score=$(python3 -I "$package/tools/acc3.py" "$final_state" \
-          --truth "$package/data/labels_f05.txt" --tsv); then
+      if score=$(snr005_score "$package" "$final_state" 2>> "$errors"); then
         printf 'final\t%s\t%s\n' "$score" "${final_state#"$root"/}" >> "$out/results.tsv"
       fi
+    else
+      printf 'No states_iter files found under %s\n' "$solve_dir" >> "$errors"
     fi
     while IFS= read -r state_file; do
       stage=${state_file##*/states_stage}; stage=${stage%.txt}
       [[ $stage != 0 ]] || continue
-      if score=$(python3 -I "$package/tools/acc3.py" "$state_file" \
-          --truth "$package/data/labels_f05.txt" --tsv); then
+      if score=$(snr005_score "$package" "$state_file" 2>> "$errors"); then
         printf 'stage %s\t%s\t%s\n' "$stage" "$score" "${state_file#"$root"/}" >> "$out/results.tsv"
       fi
-    done < <(find "$solve_dir" -maxdepth 1 -type f -name 'states_stage*.txt' -print | sort -V)
+    done < <(find "$solve_dir" -type f -name 'states_stage*.txt' -print | sort -V)
+  elif [[ ${#solve_dirs[@]} -eq 0 ]]; then
+    printf 'No solve3D output directory found under %s\n' "$root" >> "$errors"
+  else
+    printf 'SNR005 scorer or truth labels are not readable under %s\n' "$package" >> "$errors"
   fi
 
   {
@@ -180,7 +216,7 @@ write_snr005_comparison() {
     printf '<p>Found states are matched one-to-one to the three true states. Separated requires accuracy ≥ 0.90 and recall ≥ 0.75 for every state; partial requires accuracy ≥ 0.75 or two recovered states.</p>\n'
     printf '<table><thead><tr><th>Result</th><th>Accuracy</th><th>ARI</th><th>Recall (states 1/2/3)</th><th>Found populations</th><th>Inactive</th><th>Verdict</th></tr></thead><tbody>\n'
     if [[ $(wc -l < "$out/results.tsv") -eq 1 ]]; then
-      printf '<tr><td colspan="7">No score is available. Inspect the workflow and Slurm logs below.</td></tr>\n'
+      printf '<tr><td colspan="7">No score is available. Inspect the <a href="../comparisons/snr005/score_errors.log">scorer diagnostic</a> and workflow logs.</td></tr>\n'
     else
       while IFS=$'\t' read -r scope accuracy ari recall populations inactive verdict file; do
         [[ $scope != scope ]] || continue
@@ -191,7 +227,7 @@ write_snr005_comparison() {
           "$(printf '%s' "$verdict" | html_escape)"
       done < "$out/results.tsv"
     fi
-    printf '</tbody></table><p><a href="../comparisons/snr005/results.tsv">Download metrics TSV</a></p></section>\n'
+    printf '</tbody></table><p><a href="../comparisons/snr005/results.tsv">Download metrics TSV</a> · <a href="../comparisons/snr005/score_errors.log">Scorer diagnostic</a></p></section>\n'
   } > "$out/table.html"
 }
 
