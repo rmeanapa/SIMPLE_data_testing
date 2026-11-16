@@ -2022,6 +2022,7 @@ append_system_report() {
 
   if is_snr005_root "$system_root"; then
     cat "$(snr005_comparison_dir)/table.html" >> "$OUTPUT"
+    printf '<section class="snr005-run-details"><h2>Nightly run details</h2>\n' >> "$OUTPUT"
   fi
 
   append_timing_summary "${sorted_sections[@]}"
@@ -2096,6 +2097,9 @@ HTML_CARD
     append_log_tail "$section"
   done
 
+  if is_snr005_root "$system_root"; then
+    printf '</section>\n' >> "$OUTPUT"
+  fi
   printf '</section>\n' >> "$OUTPUT"
 }
 
