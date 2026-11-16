@@ -76,6 +76,12 @@ for root_arg in "$@"; do
     SYSTEM_ROOTS+=("$(cd "$SCRIPT_DIR/$root_arg" && pwd -P)")
   else
     case "$root_arg" in
+      snr005|snr05|snr005_nightly)
+        snr005_root="${REPORT_SNR005_PACKAGE:-${SNR005_PACKAGE:-/mnt/beegfs/elmlund/snr005_nightly_package}}"
+        [[ -d "$snr005_root" ]] || { echo "Missing SNR005 package: $snr005_root" >&2; exit 1; }
+        SYSTEM_ROOTS+=("$(cd "$snr005_root" && pwd -P)")
+        continue
+        ;;
       streptavidin|streptav4|streptavin)
         streptavidin_root="${REPORT_STREPTAVIDIN_ROOT:-/mnt/beegfs/elmlund/datasets_for_nightly_tests/streptavidin}"
         if [[ -d "$streptavidin_root" ]]; then
@@ -132,6 +138,20 @@ is_streptavidin_root() {
   [[ -f "$1/8_select_particles/streptav4.simple" ]]
 }
 
+# Retained reference packages can be rendered without running SIMPLE.
+is_snr005_report_root() {
+  [[ -f "$1/results/summary.tsv" && -f "$1/data/labels_f05.txt" ]]
+}
+
+write_snr005_report() (
+  local root=$1 destination=$2 staging
+  staging=$(mktemp -d)
+  trap 'rm -rf -- "$staging"' EXIT
+  python3 "$SCRIPT_DIR/.github/scripts/snr005_report.py" "$root" "$staging/site"
+  mkdir -p -- "$destination"
+  cp -R -- "$staging/site/." "$destination/"
+)
+
 is_snr005_root() {
   [[ $(basename "$1") == snr005 ]]
 }
@@ -173,6 +193,7 @@ PY
 write_snr005_comparison() {
   local root="$1" package out errors solve_dir final_state score state_file stage
   local accuracy ari recall populations inactive verdict file
+  local complete=0 wall_time=unavailable wall_seconds
   local solve_dirs=() final_states=()
 
   package=${REPORT_SNR005_PACKAGE:-${SNR005_PACKAGE:-/mnt/beegfs/elmlund/snr005_nightly_package}}
@@ -181,6 +202,17 @@ write_snr005_comparison() {
   errors="$out/score_errors.log"
   : > "$errors"
   printf 'scope\taccuracy\tari\trecall\tpopulations\tinactive\tverdict\tfile\n' > "$out/results.tsv"
+  if [[ -f "$root/LOG" ]] && grep -q 'SIMPLE_SOLVE3D NORMAL STOP' "$root/LOG" &&
+      ! grep -qE '^ERROR!|ERROR STOP|FINAL ALL-PARTICLE RECONSTRUCTION SKIPPED' "$root/LOG"; then
+    complete=1
+  else
+    printf 'Run did not complete final reconstruction normally; retained stage scores are provisional.\n' >> "$errors"
+  fi
+  if [[ -f "$root/runtime.tsv" ]]; then
+    cp -- "$root/runtime.tsv" "$out/runtime.tsv"
+    wall_seconds=$(awk -F '\t' '$1=="solve3d_seconds" {print $2; exit}' "$root/runtime.tsv")
+    if [[ $wall_seconds =~ ^[0-9]+$ ]]; then wall_time=$(format_duration "$wall_seconds"); fi
+  fi
 
   while IFS= read -r solve_dir; do solve_dirs+=("$solve_dir"); done < <(
     find "$root" -mindepth 1 -maxdepth 1 -type d -name '*_solve3D' -print | sort -V
@@ -190,13 +222,13 @@ write_snr005_comparison() {
     while IFS= read -r final_state; do final_states+=("$final_state"); done < <(
       find "$solve_dir" -type f -name 'states_iter*.txt' -print | sort -V
     )
-    if [[ ${#final_states[@]} -gt 0 ]]; then
+    if [[ ${#final_states[@]} -gt 0 && $complete -eq 1 ]]; then
       final_state=${final_states[${#final_states[@]}-1]}
       if score=$(snr005_score "$package" "$final_state" 2>> "$errors"); then
         printf 'final\t%s\t%s\n' "$score" "${final_state#"$root"/}" >> "$out/results.tsv"
       fi
     else
-      printf 'No states_iter files found under %s\n' "$solve_dir" >> "$errors"
+      printf 'No completed final assignment is available under %s\n' "$solve_dir" >> "$errors"
     fi
     while IFS= read -r state_file; do
       stage=${state_file##*/states_stage}; stage=${stage%.txt}
@@ -214,6 +246,14 @@ write_snr005_comparison() {
   {
     printf '<section><h2>Three-state recovery against simulation truth</h2>\n'
     printf '<p>Found states are matched one-to-one to the three true states. Separated requires accuracy ≥ 0.90 and recall ≥ 0.75 for every state; partial requires accuracy ≥ 0.75 or two recovered states.</p>\n'
+    printf '<p>This verdict measures particle-label recovery only. Nightly map correctness has not been evaluated against the truth maps; reference map comparisons below are historical.</p>\n'
+    printf '<p>solve3D wall time: %s</p>\n' "$(printf '%s' "$wall_time" | html_escape)"
+    if [[ -f "$out/runtime.tsv" ]]; then
+      printf '<p><a href="../comparisons/snr005/runtime.tsv">Runtime identity, seed and timing</a></p>\n'
+    fi
+    if [[ $complete -eq 0 ]]; then
+      printf '<p>INCOMPLETE: stage scores are provisional; no final verdict is available.</p>\n'
+    fi
     printf '<table><thead><tr><th>Result</th><th>Accuracy</th><th>ARI</th><th>Recall (states 1/2/3)</th><th>Found populations</th><th>Inactive</th><th>Verdict</th></tr></thead><tbody>\n'
     if [[ $(wc -l < "$out/results.tsv") -eq 1 ]]; then
       printf '<tr><td colspan="7">No score is available. Inspect the <a href="../comparisons/snr005/score_errors.log">scorer diagnostic</a> and workflow logs.</td></tr>\n'
@@ -229,6 +269,8 @@ write_snr005_comparison() {
     fi
     printf '</tbody></table><p><a href="../comparisons/snr005/results.tsv">Download metrics TSV</a> · <a href="../comparisons/snr005/score_errors.log">Scorer diagnostic</a></p></section>\n'
   } > "$out/table.html"
+  python3 "$SCRIPT_DIR/.github/scripts/snr005_report.py" --reference-tables \
+    "$package" "$out" | sed 's|href="reference_|href="../comparisons/snr005/reference_|g' >> "$out/table.html"
 }
 
 streptavidin_comparison_dir() {
@@ -2597,7 +2639,9 @@ write_pages_site() {
 
   # Keep comparisons and SIMPLE command products in the report, never in the dataset.
   for system_root in "${original_roots[@]}"; do
-    if is_streptavidin_root "$system_root"; then
+    if is_snr005_report_root "$system_root"; then
+      continue
+    elif is_streptavidin_root "$system_root"; then
       write_streptavidin_comparisons "$system_root"
     elif is_snr005_root "$system_root"; then
       write_snr005_comparison "$system_root"
@@ -2608,6 +2652,10 @@ write_pages_site() {
     system_name="$(basename "$system_root")"
     system_name="${system_name//[^A-Za-z0-9._-]/_}"
     report_file="$reports_dir/report_${system_name}.html"
+    if is_snr005_report_root "$system_root"; then
+      write_snr005_report "$system_root" "$output_dir/snr005_nightly"
+      continue
+    fi
     SYSTEM_ROOTS=("$system_root")
     OUTPUT="$report_file"
     write_report_html
@@ -2617,6 +2665,12 @@ write_pages_site() {
   OUTPUT="$original_output"
   # Standalone comparison URLs open directly on the full results page.
   if [[ ${#original_roots[@]} -eq 1 ]]; then
+    if is_snr005_report_root "${original_roots[0]}"; then
+      sed 's|href="reference_|href="snr005_nightly/reference_|g; s|href="logs/|href="snr005_nightly/logs/|g' \
+        "$output_dir/snr005_nightly/index.html" > "$output_dir/index.html"
+      echo "SNR005 results written to: $output_dir/index.html"
+      return 0
+    fi
     if is_streptavidin_root "${original_roots[0]}" || \
         [[ "$(basename "${original_roots[0]}")" == betagal_pose_cont ]] || \
         is_snr005_root "${original_roots[0]}"; then
@@ -2787,7 +2841,7 @@ write_pages_site() {
 <body>
   <main>
     <h1>SIMPLE data testing reports</h1>
-    <p><a href="topk_comparison/">Nightly top-k reconstruction comparison</a></p>
+    <p><a href="topk_comparison/">Nightly top-k reconstruction comparison</a> · <a href="snr005_nightly/">SNR 0.05 state recovery</a></p>
     <p class="timestamp">Generated ${generated_at} · SIMPLE commit <code>${simple_commit}</code></p>
     <!-- DATASET_FSC_SUMMARY -->
     <ul>
@@ -2797,6 +2851,10 @@ HTML_INDEX_HEAD
     system_name="$(basename "$system_root")"
     system_name="${system_name//[^A-Za-z0-9._-]/_}"
     system_label="$(display_name_for_root "$system_root" | html_escape)"
+    if is_snr005_report_root "$system_root"; then
+      printf '<li class="report-row"><a href="snr005_nightly/">SNR 0.05 — accuracy, recall, ARI, verdict, timing and reference tables</a></li>\n' >> "$output_dir/index.html"
+      continue
+    fi
     if is_streptavidin_root "$system_root"; then
       comparison_counts=$(cat "$(streptavidin_comparison_dir "$system_root")/count.txt")
       if [[ $(basename "$system_root") == streptavidin_pose_errors ]]; then
@@ -3066,7 +3124,7 @@ write_pages_site "$PAGES_OUTPUT_DIR"
 if [[ ${#SYSTEM_ROOTS[@]} -eq 1 && $(basename "${SYSTEM_ROOTS[0]}") == betagal_pose_cont ]]; then
   write_pose_cont_metrics > "$PAGES_OUTPUT_DIR/pose_cont_metrics.tsv"
 fi
-if [[ ${#SYSTEM_ROOTS[@]} -eq 1 ]] && is_snr005_root "${SYSTEM_ROOTS[0]}"; then
+if [[ ${#SYSTEM_ROOTS[@]} -eq 1 ]] && ! is_snr005_report_root "${SYSTEM_ROOTS[0]}" && is_snr005_root "${SYSTEM_ROOTS[0]}"; then
   snr005_verdict=$(awk -F '\t' '$1=="final" {print $7; exit}' \
     "$(snr005_comparison_dir)/results.tsv")
   [[ $snr005_verdict == separated || $snr005_verdict == partial ]]

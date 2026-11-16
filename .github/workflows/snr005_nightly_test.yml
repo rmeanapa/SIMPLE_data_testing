@@ -31,7 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate SNR005 tooling
-        run: bash .github/scripts/test_snr005_report.sh
+        run: |
+          bash .github/scripts/test_snr005_report.sh
+          bash .github/scripts/test_snr005_nightly.sh
       - name: Submit the benchmark to Slurm
         run: |
           mkdir -p "$RUN_DIR"
