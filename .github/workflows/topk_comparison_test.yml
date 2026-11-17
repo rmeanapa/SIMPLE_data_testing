@@ -3,7 +3,7 @@ name: Top-k reconstruction comparison CI
 on:
   #push: {}
   schedule:
-    - cron: '30 1 * * *'
+    - cron: '30 0 * * *'
       timezone: America/New_York
   workflow_dispatch:
 

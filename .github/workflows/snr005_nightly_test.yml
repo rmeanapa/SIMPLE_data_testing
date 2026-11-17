@@ -2,7 +2,7 @@ name: SNR 0.05 three-state nightly CI
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '30 0 * * *'
       timezone: America/New_York
   workflow_dispatch:
 
