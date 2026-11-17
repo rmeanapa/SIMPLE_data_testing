@@ -1235,10 +1235,10 @@ final_volume_metrics_for_root() {
     }
 
     # Preserve truth FSC when later continuation/polishing reports half-map FSC.
-    /RESOLUTION @ FSC=0[.]143[[:space:]]+AVG\/SDEV\/MIN\/MAX:/ {
+    /RESOLUTION @ FSC=0[.]143[[:space:]]+AVG\/SDEV\/MIN\/MAX:?[[:space:]]/ {
       if (truth_found) next
       values = $0
-      sub(/^.*AVG\/SDEV\/MIN\/MAX:[[:space:]]*/, "", values)
+      sub(/^.*AVG\/SDEV\/MIN\/MAX:?[[:space:]]*/, "", values)
       count = split(values, field, /[[:space:]]+/)
       if (count >= 1 && numeric(field[1])) {
         pending_fsc0143 = field[1]
@@ -1246,10 +1246,10 @@ final_volume_metrics_for_root() {
       next
     }
 
-    /RESOLUTION @ FSC=0[.]5[[:space:]]+AVG\/SDEV\/MIN\/MAX:/ {
+    /RESOLUTION @ FSC=0[.]5[[:space:]]+AVG\/SDEV\/MIN\/MAX:?[[:space:]]/ {
       if (truth_found) next
       values = $0
-      sub(/^.*AVG\/SDEV\/MIN\/MAX:[[:space:]]*/, "", values)
+      sub(/^.*AVG\/SDEV\/MIN\/MAX:?[[:space:]]*/, "", values)
       count = split(values, field, /[[:space:]]+/)
       if (count >= 1 && numeric(field[1])) {
         final_avg = field[1]
@@ -1652,7 +1652,7 @@ log_summary_for_section() {
           /RESOLUTION @ FSC=0.143|RESOLUTION @ FSC=0.5/ {
             criterion = $0 ~ /FSC=0.143/ ? "0.143" : "0.5"
             value = $0
-            sub(/^.*AVG\/SDEV\/MIN\/MAX:[[:space:]]*/, "", value)
+            sub(/^.*AVG\/SDEV\/MIN\/MAX:?[[:space:]]*/, "", value)
             split(value, fields, /[[:space:]]+/)
             if (fields[1] != "") {
               lines[++n] = "FSC=" criterion " resolution: " fields[1] " A"

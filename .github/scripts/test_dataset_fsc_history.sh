@@ -63,4 +63,28 @@ if bash "$root/make_report.sh" --recover-fsc-history "$work/site" > "$work/error
     fail 'Report-only recovery accepted a missing table section'
 fi
 cmp "$work/expected-history.tsv" "$work/site/fsc_history.tsv" || fail 'Failed report-only recovery changed history'
+# SIMPLE changed iteration labels to omit the colon; both log formats must
+# populate the report columns and the solve3D summary from the same values.
+mkdir -p "$work/betagal/9_solve3D"
+for format in colon no_colon; do
+    separator=:
+    [[ "$format" != no_colon ]] || separator=""
+    cat > "$work/betagal/LOG" <<LOG
+ >>> PROGRAM: solve3D
+>>> EXECUTION DIRECTORY: 9_solve3D
+>>> RESOLUTION @ FSC=0.143   AVG/SDEV/MIN/MAX${separator} 3.825 0.000 3.825 3.825
+>>> RESOLUTION @ FSC=0.5     AVG/SDEV/MIN/MAX${separator} 4.497 0.000 4.497 4.497
+**** SIMPLE_SOLVE3D NORMAL STOP ****
+LOG
+    GITHUB_ACTIONS=false REPORT_OUTPUT="$work/$format.html" REPORT_SITE_DIR="$work/$format-site" \
+        REPORT_PREVIOUS_FSC_FILE= REPORT_FSC_HISTORY_FILE= \
+        REPORT_PREVIOUS_FSC_URL= REPORT_FSC_HISTORY_URL= \
+        bash "$root/make_report.sh" "$work/betagal" > "$work/$format.log" 2>&1
+    awk -F '\t' '$1=="betagal" && $2=="4.497" && $3=="3.825" && $4=="PASS" {found=1}
+        END {exit !found}' "$work/$format-site/fsc_summary.tsv" || fail "$format FSC columns missing or incorrect"
+    grep -q 'FSC=0.143 resolution: 3.825 A' "$work/$format-site/reports/report_betagal.html" || \
+        fail "$format solve3D FSC=0.143 summary incorrect"
+    grep -q 'FSC=0.5 resolution: 4.497 A' "$work/$format-site/reports/report_betagal.html" || \
+        fail "$format solve3D FSC=0.5 summary incorrect"
+done
 echo 'Dataset FSC recovery, correction precedence, deduplication, ordering, and display checks passed.'
