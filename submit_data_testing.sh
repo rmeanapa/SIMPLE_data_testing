@@ -33,7 +33,7 @@ job_cpus=80
 job_memory=${SIMPLE_TEST_MEMORY:-128G}
 job_time=${SIMPLE_TEST_TIME:-24:00:00}
 systems=(betagal apof proteasome nanox)
-test_cases=(simulated_workflow:6vxx simulated_workflow:1jxy single_workflow:fcc single_workflow:alloy single_workflow:wurtzite)
+test_cases=(simulated_workflow:6vxx single_workflow:fcc single_workflow:alloy single_workflow:wurtzite)
 if [[ -n "$selected_system" ]]; then
     partition=csbdevel
     systems=("$selected_system")

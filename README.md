@@ -7,6 +7,10 @@
 - [Three-state SNR 0.05 nightly benchmark](https://rmeanapa.github.io/SIMPLE_data_testing/snr005_nightly/)
 - [Dataset reports](https://rmeanapa.github.io/SIMPLE_data_testing/)
 
+The scheduled simulated molecular workflow runs `suite=6vxx`. The `1jxy`
+simulated workflow was removed from SIMPLE and is excluded from submissions
+and report inputs until it is reintroduced. Archived FSC history is retained.
+
 ## SIMPLE log format compatibility
 
 SIMPLE commit `86babf86b` (November 15, 2026) changed its iteration log labels

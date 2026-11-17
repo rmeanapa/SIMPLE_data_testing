@@ -888,7 +888,7 @@ symmetry_for_root() {
   if [[ -z "$symmetry" ]]; then
     case "$system_name" in
       test_simulated_workflow_6vxx) symmetry="c3" ;;
-      test_simulated_workflow_1jxy|test_single_workflow|test_single_workflow_*) symmetry="c1" ;;
+      test_single_workflow|test_single_workflow_*) symmetry="c1" ;;
     esac
   fi
 
@@ -923,7 +923,7 @@ original_sampling_for_root() {
 
   if [[ -z "$smpd" ]]; then
     case "$system_name" in
-      test_simulated_workflow_6vxx|test_simulated_workflow_1jxy)
+      test_simulated_workflow_6vxx)
         smpd="1.3"
         ;;
       test_single_workflow|test_single_workflow_*)
